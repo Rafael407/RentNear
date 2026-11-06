@@ -17,7 +17,7 @@ import com.rentnear.app.databinding.FragmentProfileBinding;
 import com.rentnear.app.ui.auth.LoginActivity;
 import com.rentnear.app.viewmodel.AuthViewModel;
 
-/** Minimal profile for step 1: name, email, score, points, sign out. Expanded in step 5. */
+/** Profile: name, email, trust score, points and level, wallet, reviews about me, leaderboard, sign out. */
 public class ProfileFragment extends Fragment {
     private FragmentProfileBinding b;
 
@@ -40,13 +40,28 @@ public class ProfileFragment extends Fragment {
         live.observe(getViewLifecycleOwner(), r -> {
             if (b == null || r == null || !r.isOk()) return;
             b.tvName.setText(r.data.name);
-            b.tvStats.setText("Trust score: " + r.data.trustScore + "   Points: " + r.data.points);
+            b.tvStats.setText(getString(com.rentnear.app.R.string.profile_stats,
+                    String.format(java.util.Locale.US, "%.0f", r.data.trustScore), r.data.points,
+                    com.rentnear.app.util.Tiers.forPoints(r.data.points)));
+            b.tvBadge.setVisibility(r.data.trusted ? View.VISIBLE : View.GONE);
         });
         if (u != null) new com.rentnear.app.repository.UserRepository().load(u.getUid(), live);
 
         b.btnWallet.setOnClickListener(v ->
                 androidx.navigation.fragment.NavHostFragment.findNavController(this)
                         .navigate(com.rentnear.app.R.id.walletFragment));
+        b.btnLeaderboard.setOnClickListener(v ->
+                androidx.navigation.fragment.NavHostFragment.findNavController(this)
+                        .navigate(com.rentnear.app.R.id.leaderboardFragment));
+        b.btnMyReviews.setOnClickListener(v -> {
+            if (u == null) return;
+            Bundle args = new Bundle();
+            args.putString("kind", "user");
+            args.putString("id", u.getUid());
+            args.putString("title", getString(com.rentnear.app.R.string.my_reviews));
+            androidx.navigation.fragment.NavHostFragment.findNavController(this)
+                    .navigate(com.rentnear.app.R.id.reviewsFragment, args);
+        });
         b.btnSignOut.setOnClickListener(v -> {
             vm.signOut();
             Intent i = new Intent(requireContext(), LoginActivity.class);

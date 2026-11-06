@@ -207,4 +207,24 @@
     <string name="hint_collect_payout">The rental is closed. Collect the payment that was held for this booking.</string>
     <string name="late_fee_line">Late fee: %1$s (charged %2$s)</string>
     <string name="photos_header">Condition photos</string>
+
+    <!-- Step 5: reviews, score, points, leaderboard -->
+    <string name="reviews">Reviews</string>
+    <string name="reviews_about">Reviews about %1$s</string>
+    <string name="reviews_item_title">Reviews for this item</string>
+    <string name="see_reviews">See reviews</string>
+    <string name="my_reviews">Reviews about me</string>
+    <string name="no_reviews">No reviews yet.</string>
+    <string name="review_hint">Comment (optional)</string>
+    <string name="review_title_owner">Rate the owner</string>
+    <string name="review_title_renter">Rate the renter</string>
+    <string name="review_submit">Submit</string>
+    <string name="btn_leave_review">Leave a review</string>
+    <string name="hint_reviewed">You have reviewed this booking. Thank you!</string>
+    <string name="leaderboard">Leaderboard</string>
+    <string name="open_leaderboard">Leaderboard</string>
+    <string name="rank_points">By points</string>
+    <string name="rank_trust">By trust score</string>
+    <string name="profile_stats">Trust score: %1$s  \u00B7  Points: %2$d  \u00B7  %3$s</string>
+    <string name="profile_trusted">Trusted account</string>
 </resources>

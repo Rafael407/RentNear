@@ -30,6 +30,13 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['name', 'photoUrl']);
 
+      // Step 5: a review changes the reviewee's score and points (and the reviewer's own points).
+      // The writer names the review in lastReviewId; the review must be created in the same batch.
+      allow update: if signedIn() && notBanned()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['trustScore', 'points', 'lastReviewId'])
+        && reviewCredit(uid, request.resource.data.lastReviewId);
+
       allow delete: if false;
     }
 
@@ -51,6 +58,12 @@ service cloud.firestore {
 
     match /items/{itemId} {
       allow read: if signedIn();
+      // Step 5: a renter's review updates the item's rating average and count.
+      allow update: if signedIn()
+        && resource.data.ownerId != request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['ratingAvg', 'ratingCount', 'lastReviewId'])
+        && itemRatingOk(itemId, request.resource.data.lastReviewId);
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
         && notRestricted()
@@ -335,6 +348,63 @@ service cloud.firestore {
         allow create: if isOwner(uid);
         allow update, delete: if false;
       }
+    }
+
+    // ---------- Step 5: reviews, trust score, points ----------
+    // A review is one document per reviewer per completed booking. Its id is bookingId_reviewerUid.
+    // Score rule: trustScore changes by (rating - 3) for the reviewee. Points: the reviewee gets
+    // 2 x rating and the reviewer gets 5. These totals are written by the clients (no Cloud
+    // Functions on the free plan), but only in the same batch as a valid, brand-new review.
+    function reviewPath(id) {
+      return /databases/$(database)/documents/reviews/$(id);
+    }
+    function validReview(d, id) {
+      let bk = get(/databases/$(database)/documents/bookings/$(d.bookingId)).data;
+      return d.keys().hasOnly(['bookingId', 'itemId', 'reviewerId', 'revieweeId', 'role',
+                               'rating', 'comment', 'createdAt', 'reviewerName'])
+        && d.reviewerName is string && d.reviewerName.size() <= 60
+        && id == d.bookingId + '_' + request.auth.uid
+        && d.reviewerId == request.auth.uid
+        && bk.status == 'completed'
+        && d.itemId == bk.itemId
+        && ((d.role == 'renter' && bk.renterId == request.auth.uid && d.revieweeId == bk.ownerId)
+            || (d.role == 'owner' && bk.ownerId == request.auth.uid && d.revieweeId == bk.renterId))
+        && d.rating is int && d.rating >= 1 && d.rating <= 5
+        && d.comment is string && d.comment.size() <= 500
+        && d.createdAt == request.time;
+    }
+    // uid's profile is being credited because of review `id`, created in this same batch.
+    function reviewCredit(uid, id) {
+      let r = getAfter(reviewPath(id)).data;
+      let before = resource.data;
+      let after = request.resource.data;
+      return !exists(reviewPath(id)) && existsAfter(reviewPath(id))
+        && (
+          // the reviewee: score and points
+          (uid == r.revieweeId && request.auth.uid == r.reviewerId
+            && after.trustScore == before.trustScore + (r.rating - 3)
+            && after.points == before.points + r.rating * 2)
+          // the reviewer: 5 points for writing a review
+          || (uid == r.reviewerId && request.auth.uid == uid
+            && after.trustScore == before.trustScore
+            && after.points == before.points + 5)
+        );
+    }
+    function itemRatingOk(itemId, id) {
+      let r = getAfter(reviewPath(id)).data;
+      let before = resource.data;
+      let after = request.resource.data;
+      return !exists(reviewPath(id)) && existsAfter(reviewPath(id))
+        && r.reviewerId == request.auth.uid && r.role == 'renter' && r.itemId == itemId
+        && after.ratingCount == before.ratingCount + 1
+        && math.abs(after.ratingAvg * after.ratingCount
+                    - (before.ratingAvg * before.ratingCount + r.rating)) < 0.001;
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notBanned() && validReview(request.resource.data, reviewId);
+      allow update, delete: if false;
     }
 
     match /{document=**} {

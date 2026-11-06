@@ -118,6 +118,14 @@ public class ItemDetailFragment extends Fragment {
             drawRoute(r.data);
         });
 
+        b.btnReviews.setOnClickListener(v -> {
+            if (item == null) return;
+            Bundle args = new Bundle();
+            args.putString("kind", "item");
+            args.putString("id", item.id);
+            args.putString("title", getString(R.string.reviews_item_title));
+            NavHostFragment.findNavController(this).navigate(R.id.reviewsFragment, args);
+        });
         b.btnBook.setOnClickListener(v -> {
             if (item == null) return;
             Bundle args = new Bundle();
@@ -232,7 +240,7 @@ public class ItemDetailFragment extends Fragment {
 
         @Override
         public void onBindViewHolder(@NonNull Holder h, int position) {
-            Glide.with(h.b.ivPhoto).load(urls.get(position)).centerCrop().into(h.b.ivPhoto);
+            Glide.with(h.b.ivPhoto).load(urls.get(position)).fitCenter().into(h.b.ivPhoto);
         }
 
         @Override

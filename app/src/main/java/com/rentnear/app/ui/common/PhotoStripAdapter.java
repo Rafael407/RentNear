@@ -31,7 +31,7 @@ public class PhotoStripAdapter extends RecyclerView.Adapter<PhotoStripAdapter.Ho
 
     @Override
     public void onBindViewHolder(@NonNull Holder h, int position) {
-        Glide.with(h.b.ivPhoto).load(urls.get(position)).centerCrop().into(h.b.ivPhoto);
+        Glide.with(h.b.ivPhoto).load(urls.get(position)).fitCenter().into(h.b.ivPhoto);
     }
 
     @Override

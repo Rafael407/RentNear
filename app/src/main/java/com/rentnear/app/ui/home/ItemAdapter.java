@@ -55,7 +55,7 @@ public class ItemAdapter extends ListAdapter<Item, ItemAdapter.Holder> {
         String rating = i.ratingCount == 0 ? "New" : String.format(java.util.Locale.US, "%.1f★", i.ratingAvg);
         h.b.tvMeta.setText(h.b.getRoot().getContext().getString(R.string.meta_line,
                 Format.distance(i.distanceM), i.category == null ? "" : i.category, rating));
-        Glide.with(h.b.ivPhoto).load(i.firstPhoto()).centerCrop().into(h.b.ivPhoto);
+        Glide.with(h.b.ivPhoto).load(i.firstPhoto()).fitCenter().into(h.b.ivPhoto);
         h.b.getRoot().setOnClickListener(v -> onClick.onClick(i));
     }
 

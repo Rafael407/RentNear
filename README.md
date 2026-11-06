@@ -2,7 +2,7 @@
 
 Rent items from people nearby. This is the user app; the JavaFX admin client is a separate project (RentNear Admin).
 
-**Status: build step 4b of 8** — auth, listings, map, browse, chat with offers, booking requests, the demo wallet and payment, plus QR handover and return with condition photos, owner confirmation and payout, due-time reminders and late fees. Step 5 (reviews, trust score, points, leaderboard) is next.
+**Status: build step 5 of 8** — auth, listings, map, browse, chat with offers, bookings, wallet, QR handover and return, reminders and late fees, plus reviews, trust score, points and a leaderboard. Step 6 (claims, debts with a 10-day deadline, freeze and ban) is next.
 
 ## Stack (all free, no billing card)
 Java 17, XML + Material 3, ViewBinding, MVVM (ViewModel + LiveData + Repository), Navigation component, Firebase Spark plan (Auth + Firestore).
@@ -17,6 +17,22 @@ Later steps add MapLibre + OpenFreeMap, Geoapify free plan, Cloudinary free plan
 6. In **Firestore Database**, create a database, then paste `firestore.rules` into the Rules tab and publish.
 7. Download `google-services.json` **after** enabling Google sign-in (so it contains the OAuth web client) and put it in `app/`. It is git-ignored.
 8. Run the app on a device or emulator with Google Play services.
+
+## Step 5 (reviews, score, points, leaderboard): what to do
+No new keys. **Republish `firestore.rules`** (new `reviews` rules plus score/rating updates), rebuild, and test with two accounts: finish a rental, then each side taps **Leave a review** on the completed booking.
+
+## What works in step 5
+- **Reviews:** once a booking is `completed`, the renter and the owner can each leave one review (1 to 5 stars, optional comment up to 500 characters). The review id is `bookingId_reviewerUid`, so a second one is refused.
+- **Item rating:** a renter's review updates the item's average and count (shown on the item page). **See reviews** on an item lists them.
+- **Trust score:** the reviewed person's score changes by (stars - 3): 5 stars +2, 4 +1, 3 0, 2 -1, 1 -2. It can go negative.
+- **Points:** the reviewed person gets 2 per star; the reviewer gets 5. Levels: Bronze, Silver (150), Gold (500), Platinum (1000).
+- **Profile:** shows score, points, level, the Trusted badge, and **Reviews about me**.
+- **Leaderboard** (Profile > Leaderboard): top 30 by points or by trust score; banned accounts are hidden. Tap a row to read reviews about that person.
+- Review lists are sorted on the phone, so no extra Firestore index is needed.
+
+## Known gaps in step 5
+- Totals are written by the app (no Cloud Functions on the free plan). The rules only accept a score, points or rating change in the same transaction as a brand-new, valid review, with the exact expected amounts, but the owner of an item can still edit its own rating fields (an older rule), and the rules are untested.
+- Points for finishing rentals on time, and score penalties for late returns or damage, arrive with claims and debts in step 6.
 
 ## Step 4b (handover, return, payout): what to do
 No new keys. **Republish `firestore.rules`**, run a Gradle sync (new dependencies: CameraX, ML Kit barcode scanning, ZXing, WorkManager, and `guava` for CameraX), rebuild, and test on two devices (the camera needs a real phone or an emulator with a webcam).
@@ -113,4 +129,4 @@ Without the Geoapify key the map and listings still work, but address search and
 - Payments are a simulated wallet.
 
 ## Next
-Step 5: reviews, trust score, points and leaderboard.
+Step 6: damage claims, debts with a 10-day deadline, and freeze/ban.

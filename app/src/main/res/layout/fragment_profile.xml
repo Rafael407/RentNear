@@ -26,6 +26,16 @@
         android:layout_marginTop="16dp"
         android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
+    <TextView
+        android:id="@+id/tvBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/profile_trusted"
+        android:textColor="#0F766E"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnWallet"
         style="@style/Widget.Material3.Button.TonalButton"
@@ -33,6 +43,22 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
         android:text="@string/open_wallet" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnMyReviews"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/my_reviews" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnLeaderboard"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/open_leaderboard" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSignOut"

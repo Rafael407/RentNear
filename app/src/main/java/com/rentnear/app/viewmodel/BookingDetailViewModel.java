@@ -12,6 +12,7 @@ import com.google.firebase.firestore.ListenerRegistration;
 import com.rentnear.app.data.cloudinary.CloudinaryUploader;
 import com.rentnear.app.model.Booking;
 import com.rentnear.app.repository.BookingRepository;
+import com.rentnear.app.repository.ReviewRepository;
 import com.rentnear.app.repository.WalletRepository;
 import com.rentnear.app.util.Done;
 import com.rentnear.app.util.QrCode;
@@ -35,6 +36,7 @@ public class BookingDetailViewModel extends ViewModel {
 
     private final BookingRepository repo = new BookingRepository();
     private final WalletRepository wallet = new WalletRepository();
+    private final ReviewRepository reviews = new ReviewRepository();
     private final String me;
 
     private final MutableLiveData<Booking> booking = new MutableLiveData<>();
@@ -42,10 +44,13 @@ public class BookingDetailViewModel extends ViewModel {
     private final MutableLiveData<Boolean> busy = new MutableLiveData<>(false);
     private final MutableLiveData<String> error = new MutableLiveData<>();
     private final MutableLiveData<String> info = new MutableLiveData<>();
+    /** Whether I have already reviewed this booking; null until known. */
+    private final MutableLiveData<Boolean> reviewed = new MutableLiveData<>();
 
     private String bookingId;
     private ListenerRegistration registration;
     private boolean overdueMarked;
+    private boolean reviewChecked;
 
     public BookingDetailViewModel() {
         String uid = FirebaseAuth.getInstance().getUid();
@@ -58,6 +63,7 @@ public class BookingDetailViewModel extends ViewModel {
     public LiveData<Boolean> busy() { return busy; }
     public LiveData<String> error() { return error; }
     public LiveData<String> info() { return info; }
+    public LiveData<Boolean> reviewed() { return reviewed; }
 
     public void init(String id) {
         if (bookingId == null) bookingId = id;
@@ -69,6 +75,12 @@ public class BookingDetailViewModel extends ViewModel {
             @Override
             public void onBooking(Booking b) {
                 booking.setValue(b);
+                if (!reviewChecked && Booking.COMPLETED.equals(b.status)) {
+                    reviewChecked = true;
+                    reviews.hasReviewed(b.id, me, (done, err) -> {
+                        if (err == null) reviewed.setValue(done);
+                    });
+                }
                 // Best effort: either side may record that an in-use booking is now past its due time.
                 if (!overdueMarked && Booking.HANDED_OVER.equals(b.status) && b.isPastDue()) {
                     overdueMarked = true;
@@ -253,6 +265,24 @@ public class BookingDetailViewModel extends ViewModel {
         if (b == null) return;
         busy.setValue(true);
         repo.collectPayout(b, me, finish("Payout collected."));
+    }
+
+    // ------------------------------------------------------------------ step 5: reviews
+
+    /** Saves my review of this completed booking; it also updates scores, points and the item rating. */
+    public void submitReview(int rating, String comment) {
+        Booking b = booking.getValue();
+        if (b == null || rating < 1 || rating > 5) return;
+        busy.setValue(true);
+        reviews.submit(b, me, rating, comment, err -> {
+            busy.setValue(false);
+            if (err != null) {
+                error.setValue(err);
+                return;
+            }
+            reviewed.setValue(true);
+            info.setValue("Thanks! Review saved. You earned " + ReviewRepository.REVIEWER_POINTS + " points.");
+        });
     }
 
     public void clearError() { error.setValue(null); }

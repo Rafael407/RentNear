@@ -18,6 +18,7 @@ import com.bumptech.glide.Glide;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.rentnear.app.R;
+import com.rentnear.app.databinding.DialogReviewBinding;
 import com.rentnear.app.databinding.FragmentBookingDetailBinding;
 import com.rentnear.app.model.Booking;
 import com.rentnear.app.ui.common.PhotoStripAdapter;
@@ -77,6 +78,7 @@ public class BookingDetailFragment extends Fragment {
         b.btnBack.setOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
         vm.booking().observe(getViewLifecycleOwner(), this::show);
         vm.pending().observe(getViewLifecycleOwner(), p -> show(vm.booking().getValue()));
+        vm.reviewed().observe(getViewLifecycleOwner(), r -> show(vm.booking().getValue()));
         vm.busy().observe(getViewLifecycleOwner(), busy -> {
             boolean on = Boolean.TRUE.equals(busy);
             b.progress.setVisibility(on ? View.VISIBLE : View.INVISIBLE);
@@ -257,6 +259,15 @@ public class BookingDetailFragment extends Fragment {
                 } else {
                     hint(getString(R.string.hint_completed));
                 }
+                // Either side can review once the rental is completed (one review each).
+                Boolean reviewed = vm.reviewed().getValue();
+                if ((isOwner || isRenter) && reviewed != null) {
+                    if (reviewed) {
+                        hint(getString(R.string.hint_reviewed));
+                    } else {
+                        secondary(getString(R.string.btn_leave_review), v -> showReviewDialog(isOwner));
+                    }
+                }
                 break;
 
             default:
@@ -277,6 +288,19 @@ public class BookingDetailFragment extends Fragment {
             args.putString("itemId", bk.itemId);
             NavHostFragment.findNavController(this).navigate(R.id.itemDetailFragment, args);
         });
+    }
+
+    private void showReviewDialog(boolean asOwner) {
+        DialogReviewBinding d = DialogReviewBinding.inflate(getLayoutInflater());
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(asOwner ? R.string.review_title_renter : R.string.review_title_owner)
+                .setView(d.getRoot())
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.review_submit, (dlg, w) -> {
+                    CharSequence c = d.etComment.getText();
+                    vm.submitReview(Math.round(d.ratingBar.getRating()), c == null ? "" : c.toString());
+                })
+                .show();
     }
 
     private void showGallery(Booking bk) {
