@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_main"
+    app:startDestination="@id/homeFragment">
+
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.rentnear.app.ui.home.HomeFragment"
+        android:label="@string/tab_home" />
+    <fragment
+        android:id="@+id/chatsFragment"
+        android:name="com.rentnear.app.ui.chat.ChatListFragment"
+        android:label="@string/tab_chats" />
+    <fragment
+        android:id="@+id/rentalsFragment"
+        android:name="com.rentnear.app.ui.booking.RentalsFragment"
+        android:label="@string/tab_rentals" />
+    <fragment
+        android:id="@+id/profileFragment"
+        android:name="com.rentnear.app.ui.profile.ProfileFragment"
+        android:label="@string/tab_profile" />
+
+    <!-- Reached from Home; not in the bottom bar. -->
+    <fragment
+        android:id="@+id/itemDetailFragment"
+        android:name="com.rentnear.app.ui.item.ItemDetailFragment"
+        android:label="Item" />
+    <fragment
+        android:id="@+id/bookingRequestFragment"
+        android:name="com.rentnear.app.ui.booking.BookingRequestFragment"
+        android:label="Request booking" />
+    <fragment
+        android:id="@+id/bookingDetailFragment"
+        android:name="com.rentnear.app.ui.booking.BookingDetailFragment"
+        android:label="Booking" />
+    <fragment
+        android:id="@+id/qrFragment"
+        android:name="com.rentnear.app.ui.booking.QrFragment"
+        android:label="QR code" />
+    <fragment
+        android:id="@+id/cameraFragment"
+        android:name="com.rentnear.app.ui.booking.CameraFragment"
+        android:label="Camera" />
+    <fragment
+        android:id="@+id/walletFragment"
+        android:name="com.rentnear.app.ui.wallet.WalletFragment"
+        android:label="Wallet" />
+    <fragment
+        android:id="@+id/chatFragment"
+        android:name="com.rentnear.app.ui.chat.ChatFragment"
+        android:label="Chat" />
+    <fragment
+        android:id="@+id/createListingFragment"
+        android:name="com.rentnear.app.ui.item.CreateListingFragment"
+        android:label="New listing" />
+</navigation>

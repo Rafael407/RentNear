@@ -1,0 +1,9 @@
+# Copy these lines into local.properties (Android Studio creates that file; it is git-ignored).
+# All three services have free plans that need no credit card.
+
+# https://myprojects.geoapify.com -> create a project -> API key (address search + walking directions)
+GEOAPIFY_KEY=
+
+# Cloudinary dashboard -> your cloud name, and an UNSIGNED upload preset (Settings -> Upload -> Upload presets)
+CLOUDINARY_CLOUD=
+CLOUDINARY_PRESET=

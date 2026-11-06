@@ -1,0 +1,344 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Step 1: profiles only. Later steps add items, bookings, chats, claims and debts,
+    // plus frozen/banned checks and the 10-day debt deadline.
+    match /users/{uid} {
+      // Any signed-in user can read profiles (needed for names, scores, leaderboard).
+      allow read: if signedIn();
+
+      // A user creates their own profile with neutral starting values.
+      allow create: if isOwner(uid)
+        && request.resource.data.trustScore == 0
+        && request.resource.data.points == 0
+        && request.resource.data.frozen == false
+        && request.resource.data.banned == false
+        && request.resource.data.trusted == false
+        && request.resource.data.pastDamage == false;
+
+      // Users may edit only cosmetic fields. Score, points, frozen, banned and
+      // trusted cannot be changed from the client in this step.
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['name', 'photoUrl']);
+
+      allow delete: if false;
+    }
+
+    // Frozen or banned accounts cannot list or edit items.
+    function notRestricted() {
+      let u = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return u.frozen == false && u.banned == false;
+    }
+
+    function validItem(d) {
+      return d.title is string && d.title.size() > 0 && d.title.size() <= 80
+        && d.price is number && d.price > 0
+        && d.declaredValue is number && d.declaredValue > 0
+        && d.priceUnit in ['hour', 'day']
+        && d.audience in ['everyone', 'friends']
+        && d.photos is list && d.photos.size() >= 1 && d.photos.size() <= 4
+        && d.active == true;
+    }
+
+    match /items/{itemId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && notRestricted()
+        && validItem(request.resource.data);
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && notRestricted();
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ---------- Step 3: chat ----------
+    function notBanned() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.banned == false;
+    }
+    function chatData(chatId) {
+      return get(/databases/$(database)/documents/chats/$(chatId)).data;
+    }
+    function isParticipant(chatId) {
+      return signedIn() && request.auth.uid in chatData(chatId).participants;
+    }
+    function otherParticipant(chatId) {
+      let p = chatData(chatId).participants;
+      return p[0] == request.auth.uid ? p[1] : p[0];
+    }
+    function blockedByOther(chatId) {
+      return exists(/databases/$(database)/documents/blocks/$(otherParticipant(chatId))/list/$(request.auth.uid));
+    }
+
+    match /chats/{chatId} {
+      // A single get on a chat that does not exist yet must succeed so the app can create it.
+      allow get: if signedIn()
+        && (resource == null || request.auth.uid in resource.data.participants);
+      allow list: if signedIn() && request.auth.uid in resource.data.participants;
+
+      // Chat id is itemId_renterId; the renter starts it with the item's real owner.
+      allow create: if signedIn()
+        && request.resource.data.renterId == request.auth.uid
+        && request.resource.data.ownerId != request.auth.uid
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.ownerId in request.resource.data.participants
+        && chatId == request.resource.data.itemId + '_' + request.auth.uid
+        && get(/databases/$(database)/documents/items/$(request.resource.data.itemId)).data.ownerId
+             == request.resource.data.ownerId
+        && request.resource.data.lastMessage == ''
+        && notBanned();
+
+      // Participants may only touch preview, unread counters and the agreed offer.
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.participants
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['lastMessage', 'lastMessageAt', 'lastSenderId', 'unread', 'acceptedOffer']);
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isParticipant(chatId);
+
+        allow create: if isParticipant(chatId)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.type in ['text', 'image', 'offer']
+          && request.resource.data.createdAt == request.time
+          && !blockedByOther(chatId)
+          && (request.resource.data.type != 'text'
+              || (request.resource.data.body is string
+                  && request.resource.data.body.size() > 0
+                  && request.resource.data.body.size() <= 1000))
+          && (request.resource.data.type != 'image'
+              || (request.resource.data.body is string && request.resource.data.body.size() > 0))
+          && (request.resource.data.type != 'offer'
+              || (request.resource.data.offer.amount is number
+                  && request.resource.data.offer.amount > 0
+                  && request.resource.data.offer.unit in ['hour', 'day']
+                  && request.resource.data.offer.status == 'pending'));
+
+        // Only the person who received an offer can answer it, and only its status changes.
+        allow update: if isParticipant(chatId)
+          && resource.data.type == 'offer'
+          && resource.data.senderId != request.auth.uid
+          && resource.data.offer.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['offer'])
+          && request.resource.data.offer.amount == resource.data.offer.amount
+          && request.resource.data.offer.unit == resource.data.offer.unit
+          && request.resource.data.offer.status in ['accepted', 'declined', 'countered'];
+
+        allow delete: if false;
+      }
+    }
+
+    // blocks/{blocker}/list/{blocked}: either side can read it, only the blocker can write it.
+    match /blocks/{blocker}/list/{blocked} {
+      allow read: if signedIn() && (request.auth.uid == blocker || request.auth.uid == blocked);
+      allow create: if signedIn() && request.auth.uid == blocker && blocked != blocker;
+      allow delete: if signedIn() && request.auth.uid == blocker;
+      allow update: if false;
+    }
+
+    // Reports are write-only for users; the admin app (Admin SDK) reads and resolves them.
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.targetType in ['user', 'item', 'chat']
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.status == 'open';
+      allow read, update, delete: if false;
+    }
+
+    // ---------- Step 4a: wallet and bookings ----------
+    // Items worth more than this need a Trusted renter (badge granted by an admin).
+    function trustedLimit() {
+      return 15000;
+    }
+    function userData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+    function unitMs(u) {
+      return u == 'hour' ? 3600000 : 86400000;
+    }
+    function agreedRate(d) {
+      let chatPath = /databases/$(database)/documents/chats/$(d.itemId + '_' + request.auth.uid);
+      return exists(chatPath)
+        && get(chatPath).data.get('acceptedOffer', null) != null
+        && get(chatPath).data.acceptedOffer.amount == d.rate
+        && get(chatPath).data.acceptedOffer.unit == d.unit;
+    }
+    function validBookingCreate(d) {
+      let item = get(/databases/$(database)/documents/items/$(d.itemId)).data;
+      let ms = d.end.toMillis() - d.start.toMillis();
+      let um = unitMs(d.unit);
+      return d.renterId == request.auth.uid
+        && d.ownerId == item.ownerId
+        && d.ownerId != request.auth.uid
+        && item.active == true
+        && d.unit == item.priceUnit
+        && d.status == 'requested'
+        && ms > 0 && ms <= 2592000000
+        && d.start.toMillis() >= request.time.toMillis() - 600000
+        && d.units is int && d.units >= 1
+        && d.units * um >= ms && (d.units - 1) * um < ms
+        && d.rate is number && d.rate > 0
+        && d.total == d.rate * d.units
+        && d.declaredValue == item.declaredValue
+        && (d.rate == item.price || agreedRate(d))
+        && (item.declaredValue <= trustedLimit() || userData(request.auth.uid).trusted == true);
+    }
+    function changedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function walletPaid(total) {
+      let w = /databases/$(database)/documents/wallets/$(request.auth.uid);
+      return getAfter(w).data.balance == get(w).data.balance - total;
+    }
+    function validBookingUpdate() {
+      let me = request.auth.uid;
+      let old = resource.data;
+      let nw = request.resource.data;
+      return (me == old.ownerId && old.status == 'requested'
+              && nw.status in ['accepted', 'declined'] && changedOnly(['status', 'updatedAt']))
+          || (me == old.ownerId && old.status == 'accepted'
+              && nw.status == 'cancelled' && changedOnly(['status', 'updatedAt']))
+          || (me == old.renterId && old.status in ['requested', 'accepted']
+              && nw.status == 'cancelled' && changedOnly(['status', 'updatedAt']))
+          || (me == old.renterId && old.status == 'accepted' && nw.status == 'paid'
+              && changedOnly(['status', 'updatedAt', 'paidAt', 'escrow'])
+              && nw.escrow == old.total && walletPaid(old.total))
+          // Step 4b: owner saves condition photos before handover (once).
+          || (me == old.ownerId && old.status == 'paid' && nw.status == 'paid'
+              && changedOnly(['photos', 'updatedAt']) && addsPhotos('beforeOwner'))
+          // Renter scanned the owner's handover QR (code kept in a owner-only document) and took photos.
+          || (me == old.renterId && old.status == 'paid' && nw.status == 'handed_over'
+              && 'beforeOwner' in old.get('photos', {})
+              && changedOnly(['status', 'updatedAt', 'scannedCode', 'photos', 'handedOverAt'])
+              && addsPhotos('beforeRenter') && nw.scannedCode == codes().handoverCode)
+          // Either side can mark an in-use booking overdue once the due time has passed.
+          || ((me == old.ownerId || me == old.renterId) && old.status == 'handed_over'
+              && nw.status == 'overdue' && request.time.toMillis() > old.end.toMillis()
+              && changedOnly(['status', 'updatedAt']))
+          // Renter scanned the return QR, took photos, and pays any late fee from the wallet.
+          || (me == old.renterId && old.status in ['handed_over', 'overdue'] && nw.status == 'returned'
+              && changedOnly(['status', 'updatedAt', 'scannedReturnCode', 'photos', 'returnedAt',
+                              'lateFee', 'lateFeeCharged'])
+              && addsPhotos('afterRenter') && nw.scannedReturnCode == codes().returnCode
+              && lateFeeValid(old, nw) && lateFeeWallet(nw))
+          // Owner confirms the return with photos; the held money moves to the owner's wallet.
+          || (me == old.ownerId && old.status == 'returned' && nw.status == 'completed'
+              && changedOnly(['status', 'updatedAt', 'photos', 'completedAt', 'payoutCollected'])
+              && addsPhotos('afterOwner') && nw.payoutCollected == true)
+          // If the owner does nothing for 24 h after the return, the renter can close the rental.
+          || (me == old.renterId && old.status == 'returned' && nw.status == 'completed'
+              && request.time.toMillis() >= old.returnedAt.toMillis() + 86400000
+              && changedOnly(['status', 'updatedAt', 'completedAt']))
+          // Owner collects a payout that was not collected at confirmation.
+          || (me == old.ownerId && old.status == 'completed' && nw.status == 'completed'
+              && old.get('payoutCollected', false) == false && nw.payoutCollected == true
+              && changedOnly(['payoutCollected', 'updatedAt']));
+    }
+
+    function codes() {
+      return get(/databases/$(database)/documents/bookings/$(resource.id)/secret/codes).data;
+    }
+    function addsPhotos(key) {
+      let oldP = resource.data.get('photos', {});
+      let newP = request.resource.data.photos;
+      return newP.diff(oldP).affectedKeys().hasOnly([key])
+        && !(key in oldP)
+        && newP[key] is list && newP[key].size() >= 1 && newP[key].size() <= 4;
+    }
+    // Late fee: half the rate per started unit after a 15 minute grace period, capped at the total.
+    function lateFeeAt(old, atMs) {
+      let late = atMs - old.end.toMillis() - 900000;
+      let fee = late <= 0 ? 0 : math.ceil(late / unitMs(old.unit)) * old.rate * 0.5;
+      return fee > old.total ? old.total : fee;
+    }
+    function lateFeeValid(old, nw) {
+      let t = request.time.toMillis();
+      return nw.lateFee == lateFeeAt(old, t) || nw.lateFee == lateFeeAt(old, t - 120000);
+    }
+    // The renter pays the late fee from the wallet, or whatever is left if the wallet is short.
+    function lateFeeWallet(nw) {
+      let w = /databases/$(database)/documents/wallets/$(request.auth.uid);
+      return nw.lateFeeCharged >= 0 && nw.lateFeeCharged <= nw.lateFee
+        && getAfter(w).data.balance == get(w).data.balance - nw.lateFeeCharged
+        && (nw.lateFeeCharged == nw.lateFee || getAfter(w).data.balance == 0);
+    }
+    // A payout credits the owner's wallet by exactly escrow + late fee charged, in the same batch
+    // that flips payoutCollected on the booking.
+    function payoutOk(uid) {
+      let bPath = /databases/$(database)/documents/bookings/$(request.resource.data.lastPayoutBooking);
+      let before = get(bPath).data;
+      let after = getAfter(bPath).data;
+      return before.ownerId == uid
+        && before.get('payoutCollected', false) == false
+        && after.payoutCollected == true
+        && after.status == 'completed'
+        && request.resource.data.balance
+             == resource.data.balance + (before.escrow + before.get('lateFeeCharged', 0));
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if signedIn()
+        && (resource.data.ownerId == request.auth.uid || resource.data.renterId == request.auth.uid);
+      allow create: if signedIn() && notRestricted() && validBookingCreate(request.resource.data);
+      // Frozen accounts may still hand items back; only banned ones are locked out.
+      allow update: if signedIn() && notBanned() && validBookingUpdate();
+      allow delete: if false;
+
+      // Handover and return codes: only the owner can read or create them. The renter learns a
+      // code only by scanning the owner's QR, and the booking rules compare it to this document.
+      match /secret/{docId} {
+        allow read: if signedIn()
+          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.ownerId == request.auth.uid;
+        allow create: if signedIn() && docId == 'codes'
+          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.ownerId == request.auth.uid
+          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.status
+               in ['paid', 'handed_over', 'overdue']
+          && request.resource.data.keys().hasOnly(['handoverCode', 'returnCode', 'createdAt']);
+        allow update, delete: if false;
+      }
+    }
+
+    // Simulated wallet (demo money only). Balance changes are limited to +5000 per write; a payment
+    // must lower the balance by exactly the booking total (checked in the booking rule above).
+    match /wallets/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && request.resource.data.balance == 2000
+        && request.resource.data.keys().hasOnly(['balance', 'createdAt']);
+      allow update: if isOwner(uid)
+        && request.resource.data.balance >= 0
+        && (
+          // top-up, payment or late fee: only the balance changes, and it grows by at most 5000
+          (changedOnly(['balance']) && request.resource.data.balance <= resource.data.balance + 5000)
+          // payout of a completed booking (checked in payoutOk)
+          || (changedOnly(['balance', 'lastPayoutBooking']) && payoutOk(uid))
+        );
+      allow delete: if false;
+
+      match /tx/{txId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid);
+        allow update, delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
