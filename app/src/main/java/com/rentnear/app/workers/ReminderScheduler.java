@@ -25,7 +25,7 @@ public final class ReminderScheduler {
     private ReminderScheduler() {}
 
     public static void sync(Context context, @Nullable List<Booking> bookings, @Nullable String me) {
-        if (bookings == null || me == null) return;
+        if (bookings == null || me == null || !com.rentnear.app.util.Prefs.remindersOn()) return;
         WorkManager wm = WorkManager.getInstance(context.getApplicationContext());
         long now = System.currentTimeMillis();
 

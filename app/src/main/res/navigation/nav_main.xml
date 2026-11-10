@@ -51,6 +51,26 @@
         android:name="com.rentnear.app.ui.profile.LeaderboardFragment"
         android:label="Leaderboard" />
     <fragment
+        android:id="@+id/claimsFragment"
+        android:name="com.rentnear.app.ui.claim.ClaimsFragment"
+        android:label="Claims" />
+    <fragment
+        android:id="@+id/claimFragment"
+        android:name="com.rentnear.app.ui.claim.ClaimFragment"
+        android:label="Claim" />
+    <fragment
+        android:id="@+id/debtsFragment"
+        android:name="com.rentnear.app.ui.claim.DebtsFragment"
+        android:label="Debts" />
+    <fragment
+        android:id="@+id/friendsFragment"
+        android:name="com.rentnear.app.ui.friends.FriendsFragment"
+        android:label="Friends" />
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.rentnear.app.ui.settings.SettingsFragment"
+        android:label="Settings" />
+    <fragment
         android:id="@+id/walletFragment"
         android:name="com.rentnear.app.ui.wallet.WalletFragment"
         android:label="Wallet" />

@@ -47,7 +47,8 @@ public class ReminderWorker extends Worker {
         boolean renter = d.getBoolean(KEY_RENTER, true);
 
         Context c = getApplicationContext();
-        if (!NotificationManagerCompat.from(c).areNotificationsEnabled()) return Result.success();
+        if (!com.rentnear.app.util.Prefs.remindersOn()
+                || !NotificationManagerCompat.from(c).areNotificationsEnabled()) return Result.success();
         if (!stillInUse(id)) return Result.success();
 
         String when = minutes >= 1440 ? "in 24 hours"

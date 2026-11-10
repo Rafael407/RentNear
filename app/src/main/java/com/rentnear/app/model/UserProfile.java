@@ -17,6 +17,8 @@ public class UserProfile {
     public boolean frozen;
     public boolean banned;
     public boolean pastDamage;
+    /** Latest warning from an admin, or empty. */
+    public String warning;
 
     public static Map<String, Object> newUserMap(String name, String email, String photoUrl) {
         Map<String, Object> m = new HashMap<>();
@@ -47,6 +49,7 @@ public class UserProfile {
         u.frozen = Boolean.TRUE.equals(d.getBoolean("frozen"));
         u.banned = Boolean.TRUE.equals(d.getBoolean("banned"));
         u.pastDamage = Boolean.TRUE.equals(d.getBoolean("pastDamage"));
+        u.warning = d.getString("warning");
         return u;
     }
 }

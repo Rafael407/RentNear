@@ -227,4 +227,96 @@
     <string name="rank_trust">By trust score</string>
     <string name="profile_stats">Trust score: %1$s  \u00B7  Points: %2$d  \u00B7  %3$s</string>
     <string name="profile_trusted">Trusted account</string>
+
+    <!-- Step 6: claims, debts, freeze and ban -->
+    <string name="claims">Claims</string>
+    <string name="debts">Debts</string>
+    <string name="open_claims">Claims</string>
+    <string name="open_debts">Debts</string>
+    <string name="view_booking">View booking</string>
+    <string name="no_claims">No claims.</string>
+    <string name="no_debts">No debts.</string>
+    <string name="btn_file_claim">Report damage (file a claim)</string>
+    <string name="btn_view_claim">View claim</string>
+    <string name="claim_dialog_title">Claim for damage</string>
+    <string name="claim_amount_hint">Amount to claim</string>
+    <string name="claim_reason_hint">What was damaged?</string>
+    <string name="claim_send">Send claim</string>
+    <string name="claim_offer_dialog_title">Offer a smaller amount</string>
+    <string name="offer_amount_hint">Amount you will pay</string>
+    <string name="claim_amount_line">Claimed: %1$s</string>
+    <string name="claim_offer_line">Renter offered: %1$s</string>
+    <string name="claim_resolved_line">Agreed: %1$s</string>
+    <string name="claim_between">%1$s and %2$s</string>
+    <string name="claim_reason_line">\u201C%1$s\u201D</string>
+    <string name="claim_accept">Accept claim</string>
+    <string name="claim_dispute">Dispute</string>
+    <string name="claim_offer">Offer a smaller amount</string>
+    <string name="claim_accept_offer">Accept offer</string>
+    <string name="claim_reject_offer">Reject offer</string>
+    <string name="claim_withdraw">Withdraw claim</string>
+    <string name="hint_claim_owner_open">Waiting for the renter to accept, dispute or offer less. You can withdraw the claim until they respond.</string>
+    <string name="hint_claim_renter_open">Accepting creates a debt due in 10 days and freezes your account until it is paid. Disputing sends the case to an admin, who compares the handover and return photos.</string>
+    <string name="hint_claim_owner_offered">The renter offered less. Accepting creates a debt for that amount; rejecting sends the case to an admin.</string>
+    <string name="hint_claim_renter_offered">Waiting for the owner to accept your offer.</string>
+    <string name="hint_claim_accepted">A debt was created. See Debts to pay or collect it.</string>
+    <string name="hint_claim_disputed">An admin will compare the photos and chat, then decide.</string>
+    <string name="debt_title">%1$s (%2$s)</string>
+    <string name="debt_you_owe">You owe %1$s</string>
+    <string name="debt_owed_to_you">%1$s owes you</string>
+    <string name="debt_due_days">Due in %1$d days</string>
+    <string name="debt_due_today">Due today</string>
+    <string name="debt_overdue">Overdue. The account can now be banned.</string>
+    <string name="debt_paid">Paid</string>
+    <string name="debt_collected">Paid and collected</string>
+    <string name="btn_pay_debt">Pay %1$s</string>
+    <string name="btn_collect_debt">Collect %1$s</string>
+    <string name="btn_ban_debtor">Ban account (deadline missed)</string>
+    <string name="debts_summary">Debts are due 10 days after a claim is accepted. Paying unfreezes your account and gives back 10 trust score.</string>
+    <string name="frozen_notice">Your account is frozen because of an unpaid debt. You cannot list or rent items until you pay it.</string>
+    <string name="banned_deadline">Your account was banned because a debt passed its 10-day deadline.</string>
+    <string name="debt_reminder_title">Debt due soon</string>
+
+    <!-- Step 7: admin-facing features in the app -->
+    <string name="request_trusted">Request Trusted badge</string>
+    <string name="trusted_requested">Request sent. An admin will review your rental history.</string>
+    <string name="warning_from_admin">Warning from an admin: %1$s</string>
+
+    <!-- Step 8: friends, settings, paging -->
+    <string name="friends">Friends</string>
+    <string name="open_friends">Friends</string>
+    <string name="friend_email_hint">Friend\u2019s email</string>
+    <string name="friend_add">Add</string>
+    <string name="friend_accept">Accept</string>
+    <string name="friend_decline">Decline</string>
+    <string name="friend_cancel">Cancel</string>
+    <string name="friend_remove">Remove</string>
+    <string name="friend_remove_title">Remove %1$s?</string>
+    <string name="settings">Settings</string>
+    <string name="open_settings">Settings</string>
+    <string name="settings_radius">Search radius</string>
+    <string name="settings_reminders">Return and debt reminders</string>
+    <string name="settings_reminders_hint">Notifications before a rental is due or a debt deadline.</string>
+    <string name="settings_clear_cache">Clear saved listings</string>
+    <string name="settings_cache_cleared">Saved listings cleared.</string>
+    <string name="settings_about">RentNear 0.8 \u00B7 demo wallet, no real money.</string>
+    <string name="load_more">Show more</string>
+    <string name="showing_cached">Showing saved listings while loading\u2026</string>
+
+    <!-- Step 9: components for the demo -->
+    <string name="btn_show_countdown">Show countdown in notification</string>
+    <string name="btn_stop_countdown">Stop countdown notification</string>
+    <string name="countdown_started">Countdown started. Look in the notification tray.</string>
+    <string name="item_open_maps">Open pickup in Maps</string>
+    <string name="item_share">Share listing</string>
+    <string name="no_maps_app">No maps app found.</string>
+    <string name="wallet_export">Export history (CSV)</string>
+    <string name="wallet_export_failed">Could not export: %1$s</string>
+    <string name="friend_from_contacts">Pick from contacts</string>
+    <string name="contacts_title">Choose a contact</string>
+    <string name="contacts_none">No contacts with an email address were found.</string>
+    <string name="contacts_permission_denied">Contacts permission denied.</string>
+    <string name="no_transactions">No transactions to export yet.</string>
+    <string name="presence_online">Online</string>
+    <string name="presence_last_seen">Last seen %1$s</string>
 </resources>

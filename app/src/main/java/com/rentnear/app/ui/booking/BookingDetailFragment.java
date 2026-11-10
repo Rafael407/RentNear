@@ -18,9 +18,13 @@ import com.bumptech.glide.Glide;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.rentnear.app.R;
+import com.rentnear.app.databinding.DialogClaimBinding;
 import com.rentnear.app.databinding.DialogReviewBinding;
 import com.rentnear.app.databinding.FragmentBookingDetailBinding;
 import com.rentnear.app.model.Booking;
+import com.rentnear.app.model.Claim;
+import com.rentnear.app.repository.ClaimRepository;
+import com.rentnear.app.services.RentalTimerService;
 import com.rentnear.app.ui.common.PhotoStripAdapter;
 import com.rentnear.app.util.DateFmt;
 import com.rentnear.app.util.Format;
@@ -79,6 +83,8 @@ public class BookingDetailFragment extends Fragment {
         vm.booking().observe(getViewLifecycleOwner(), this::show);
         vm.pending().observe(getViewLifecycleOwner(), p -> show(vm.booking().getValue()));
         vm.reviewed().observe(getViewLifecycleOwner(), r -> show(vm.booking().getValue()));
+        vm.claim().observe(getViewLifecycleOwner(), c -> show(vm.booking().getValue()));
+        vm.claimChecked().observe(getViewLifecycleOwner(), c -> show(vm.booking().getValue()));
         vm.busy().observe(getViewLifecycleOwner(), busy -> {
             boolean on = Boolean.TRUE.equals(busy);
             b.progress.setVisibility(on ? View.VISIBLE : View.INVISIBLE);
@@ -274,6 +280,9 @@ public class BookingDetailFragment extends Fragment {
                 break;
         }
 
+        showClaimButton(bk, isOwner, isRenter);
+        showTimerButton(bk, isRenter);
+
         // Keep due-time reminders in step with what the app just learned about this booking.
         ReminderScheduler.sync(requireContext(), Collections.singletonList(bk), me);
 
@@ -288,6 +297,68 @@ public class BookingDetailFragment extends Fragment {
             args.putString("itemId", bk.itemId);
             NavHostFragment.findNavController(this).navigate(R.id.itemDetailFragment, args);
         });
+    }
+
+    /** Renter, while the item is in use: an ongoing notification (foreground service) with the time left. */
+    private void showTimerButton(Booking bk, boolean isRenter) {
+        boolean inUse = Booking.HANDED_OVER.equals(bk.status) || Booking.OVERDUE.equals(bk.status);
+        if (!inUse) {
+            b.btnTimer.setVisibility(View.GONE);
+            if (Booking.RETURNED.equals(bk.status) || Booking.COMPLETED.equals(bk.status)) {
+                RentalTimerService.stop(requireContext());
+            }
+            return;
+        }
+        if (!isRenter) {
+            b.btnTimer.setVisibility(View.GONE);
+            return;
+        }
+        b.btnTimer.setText(R.string.btn_show_countdown);
+        b.btnTimer.setOnClickListener(v -> {
+            RentalTimerService.start(requireContext().getApplicationContext(), bk);
+            Toast.makeText(requireContext(), R.string.countdown_started, Toast.LENGTH_SHORT).show();
+        });
+        b.btnTimer.setVisibility(View.VISIBLE);
+    }
+
+    /** Owner: report damage within 24 h of the return. Both sides: open an existing claim. */
+    private void showClaimButton(Booking bk, boolean isOwner, boolean isRenter) {
+        b.btnClaim.setVisibility(View.GONE);
+        boolean returned = Booking.RETURNED.equals(bk.status) || Booking.COMPLETED.equals(bk.status);
+        if (!returned || !Boolean.TRUE.equals(vm.claimChecked().getValue())) return;
+        Claim claim = vm.claim().getValue();
+        if (claim != null) {
+            b.btnClaim.setText(R.string.btn_view_claim);
+            b.btnClaim.setOnClickListener(v -> {
+                Bundle args = new Bundle();
+                args.putString("claimId", claim.id);
+                NavHostFragment.findNavController(this).navigate(R.id.claimFragment, args);
+            });
+            b.btnClaim.setVisibility(View.VISIBLE);
+        } else if (isOwner && ClaimRepository.canFile(bk)) {
+            b.btnClaim.setText(R.string.btn_file_claim);
+            b.btnClaim.setOnClickListener(v -> showClaimDialog(bk));
+            b.btnClaim.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void showClaimDialog(Booking bk) {
+        DialogClaimBinding d = DialogClaimBinding.inflate(getLayoutInflater());
+        d.etAmount.setHint(getString(R.string.claim_amount_hint) + " (max " + Format.money(bk.declaredValue) + ")");
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.claim_dialog_title)
+                .setView(d.getRoot())
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.claim_send, (dlg, w) -> {
+                    double amount = 0;
+                    try {
+                        amount = Double.parseDouble(String.valueOf(d.etAmount.getText()).trim());
+                    } catch (NumberFormatException ignored) {
+                        // validated as 0 in the ViewModel
+                    }
+                    vm.fileClaim(amount, String.valueOf(d.etReason.getText()));
+                })
+                .show();
     }
 
     private void showReviewDialog(boolean asOwner) {

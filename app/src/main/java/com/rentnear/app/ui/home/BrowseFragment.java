@@ -49,10 +49,15 @@ public class BrowseFragment extends Fragment {
 
         vm.category().observe(getViewLifecycleOwner(), c ->
                 b.btnCategory.setText(getString(R.string.category_label, c)));
-        vm.shown().observe(getViewLifecycleOwner(), list -> {
+        b.btnMore.setOnClickListener(v -> vm.loadMore());
+        vm.browse().observe(getViewLifecycleOwner(), list -> {
             adapter.submitList(list);
             b.tvEmpty.setVisibility(list == null || list.isEmpty() ? View.VISIBLE : View.GONE);
         });
+        vm.hasMore().observe(getViewLifecycleOwner(), more ->
+                b.btnMore.setVisibility(Boolean.TRUE.equals(more) ? View.VISIBLE : View.GONE));
+        vm.fromCache().observe(getViewLifecycleOwner(), c ->
+                b.tvCached.setVisibility(Boolean.TRUE.equals(c) ? View.VISIBLE : View.GONE));
         vm.loading().observe(getViewLifecycleOwner(), l -> b.refresh.setRefreshing(Boolean.TRUE.equals(l)));
         vm.error().observe(getViewLifecycleOwner(), e -> {
             if (e != null) Toast.makeText(requireContext(), e, Toast.LENGTH_LONG).show();

@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.rentnear.app.R;
 import com.rentnear.app.databinding.FragmentWalletBinding;
 import com.rentnear.app.databinding.ItemTxBinding;
 import com.rentnear.app.model.WalletTx;
@@ -43,6 +44,20 @@ public class WalletFragment extends Fragment {
         b.btnAdd500.setOnClickListener(v -> vm.topUp(500));
         b.btnAdd1000.setOnClickListener(v -> vm.topUp(1000));
         b.btnAdd2000.setOnClickListener(v -> vm.topUp(2000));
+        // Writes a CSV and shares it through the app's FileProvider (a content provider).
+        b.btnExport.setOnClickListener(v -> {
+            java.util.List<com.rentnear.app.model.WalletTx> list = vm.tx().getValue();
+            if (list == null || list.isEmpty()) {
+                Toast.makeText(requireContext(), R.string.no_transactions, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            try {
+                com.rentnear.app.util.CsvExport.shareWallet(requireContext(), list);
+            } catch (Exception e) {
+                Toast.makeText(requireContext(), getString(R.string.wallet_export_failed, e.getMessage()),
+                        Toast.LENGTH_LONG).show();
+            }
+        });
 
         vm.balance().observe(getViewLifecycleOwner(), bal ->
                 b.tvBalance.setText(bal == null ? "" : Format.money(bal)));

@@ -49,6 +49,14 @@
                 android:maxLines="1"
                 android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                 android:textColor="?attr/colorPrimary" />
+
+            <TextView
+                android:id="@+id/tvPresence"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                android:visibility="gone" />
         </LinearLayout>
 
         <ImageButton

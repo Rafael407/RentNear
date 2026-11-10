@@ -17,6 +17,8 @@ service cloud.firestore {
 
       // A user creates their own profile with neutral starting values.
       allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['name', 'email', 'photoUrl', 'trusted', 'trustScore',
+                                                 'points', 'frozen', 'banned', 'pastDamage', 'createdAt'])
         && request.resource.data.trustScore == 0
         && request.resource.data.points == 0
         && request.resource.data.frozen == false
@@ -36,6 +38,18 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['trustScore', 'points', 'lastReviewId'])
         && reviewCredit(uid, request.resource.data.lastReviewId);
+
+      // Step 6: an accepted claim creates a debt, which freezes the debtor and lowers their score.
+      allow update: if signedIn() && notBanned()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['frozen', 'trustScore', 'pastDamage', 'openDebts', 'lastDebtId'])
+        && (debtStarts(uid, request.resource.data.lastDebtId)
+            || debtRepaid(uid, request.resource.data.lastDebtId));
+
+      // Past the 10-day deadline the debtor (or the person owed) can ban the account.
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['banned', 'lastDebtId'])
+        && debtDefaulted(uid, request.resource.data.lastDebtId);
 
       allow delete: if false;
     }
@@ -71,6 +85,11 @@ service cloud.firestore {
       allow update: if signedIn()
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == resource.data.ownerId
+        && resource.data.get('removed', false) == false
+        // Owners edit listing details only; ratings and admin removal stay out of reach.
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['ownerName', 'title', 'description', 'category', 'price', 'priceUnit',
+                       'declaredValue', 'address', 'lat', 'lng', 'geohash', 'audience', 'photos', 'active'])
         && notRestricted();
       allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
     }
@@ -165,6 +184,8 @@ service cloud.firestore {
     // Reports are write-only for users; the admin app (Admin SDK) reads and resolves them.
     match /reports/{reportId} {
       allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['targetType', 'targetId', 'reportedUid', 'itemId',
+                                                 'reporterId', 'reason', 'status', 'createdAt'])
         && request.resource.data.reporterId == request.auth.uid
         && request.resource.data.targetType in ['user', 'item', 'chat']
         && request.resource.data.reason is string
@@ -222,15 +243,17 @@ service cloud.firestore {
       let me = request.auth.uid;
       let old = resource.data;
       let nw = request.resource.data;
+      // A frozen owner cannot accept new requests (declining is still allowed).
       return (me == old.ownerId && old.status == 'requested'
-              && nw.status in ['accepted', 'declined'] && changedOnly(['status', 'updatedAt']))
+              && nw.status in ['accepted', 'declined'] && changedOnly(['status', 'updatedAt'])
+              && (nw.status == 'declined' || notRestricted()))
           || (me == old.ownerId && old.status == 'accepted'
               && nw.status == 'cancelled' && changedOnly(['status', 'updatedAt']))
           || (me == old.renterId && old.status in ['requested', 'accepted']
               && nw.status == 'cancelled' && changedOnly(['status', 'updatedAt']))
           || (me == old.renterId && old.status == 'accepted' && nw.status == 'paid'
               && changedOnly(['status', 'updatedAt', 'paidAt', 'escrow'])
-              && nw.escrow == old.total && walletPaid(old.total))
+              && nw.escrow == old.total && walletPaid(old.total) && notRestricted())
           // Step 4b: owner saves condition photos before handover (once).
           || (me == old.ownerId && old.status == 'paid' && nw.status == 'paid'
               && changedOnly(['photos', 'updatedAt']) && addsPhotos('beforeOwner'))
@@ -276,7 +299,7 @@ service cloud.firestore {
     // Late fee: half the rate per started unit after a 15 minute grace period, capped at the total.
     function lateFeeAt(old, atMs) {
       let late = atMs - old.end.toMillis() - 900000;
-      let fee = late <= 0 ? 0 : math.ceil(late / unitMs(old.unit)) * old.rate * 0.5;
+      let fee = late <= 0 ? 0 : math.ceil(float(late) / unitMs(old.unit)) * old.rate * 0.5;
       return fee > old.total ? old.total : fee;
     }
     function lateFeeValid(old, nw) {
@@ -340,6 +363,8 @@ service cloud.firestore {
           (changedOnly(['balance']) && request.resource.data.balance <= resource.data.balance + 5000)
           // payout of a completed booking (checked in payoutOk)
           || (changedOnly(['balance', 'lastPayoutBooking']) && payoutOk(uid))
+          // the person owed collects a repaid debt (checked in debtCollectOk)
+          || (changedOnly(['balance', 'lastDebtCollected']) && debtCollectOk(uid))
         );
       allow delete: if false;
 
@@ -405,6 +430,217 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn() && notBanned() && validReview(request.resource.data, reviewId);
       allow update, delete: if false;
+    }
+
+    // ---------- Step 6: claims, debts, freeze and ban ----------
+    // Flow: the owner files a claim within 24 h of the return. The renter accepts, disputes, or
+    // offers a smaller amount (the owner then accepts or sends it to an admin). Accepting creates a
+    // debt (never more than the item's declared value) due in 10 days, freezes the debtor and costs
+    // them 20 trust score. Repaying unfreezes (when no other debt is open) and gives 10 back. After
+    // the deadline the debtor's account can be banned. Disputes are settled by an admin (step 7).
+    function claimPath(id) {
+      return /databases/$(database)/documents/claims/$(id);
+    }
+    function debtPath(id) {
+      return /databases/$(database)/documents/debts/$(id);
+    }
+    function validClaim(d, id) {
+      let bk = get(/databases/$(database)/documents/bookings/$(id)).data;
+      return d.keys().hasOnly(['bookingId', 'itemId', 'itemTitle', 'ownerId', 'renterId', 'ownerName',
+                               'renterName', 'amount', 'declaredValue', 'reason', 'status',
+                               'createdAt', 'updatedAt'])
+        && d.bookingId == id && d.itemId == bk.itemId
+        && d.ownerId == request.auth.uid && bk.ownerId == request.auth.uid
+        && d.renterId == bk.renterId
+        && bk.status in ['returned', 'completed']
+        && request.time.toMillis() <= bk.returnedAt.toMillis() + 86400000
+        && d.declaredValue == bk.declaredValue
+        && d.amount is number && d.amount > 0 && d.amount <= bk.declaredValue
+        && d.reason is string && d.reason.size() > 0 && d.reason.size() <= 500
+        && d.itemTitle is string && d.ownerName is string && d.renterName is string
+        && d.status == 'open'
+        && d.createdAt == request.time && d.updatedAt == request.time;
+    }
+    // The claim moves to accepted in this batch and a debt for the agreed amount is created.
+    function debtFromClaim(id) {
+      return !exists(debtPath(id)) && existsAfter(debtPath(id))
+        && getAfter(claimPath(id)).data.status == 'accepted';
+    }
+    function validClaimUpdate() {
+      let me = request.auth.uid;
+      let old = resource.data;
+      let nw = request.resource.data;
+      return (me == old.renterId && old.status == 'open' && nw.status == 'accepted'
+              && changedOnly(['status', 'updatedAt', 'resolvedAmount'])
+              && nw.resolvedAmount == old.amount && debtFromClaim(resource.id))
+          || (me == old.renterId && old.status == 'open' && nw.status == 'disputed'
+              && changedOnly(['status', 'updatedAt']))
+          || (me == old.renterId && old.status == 'open' && nw.status == 'offered'
+              && changedOnly(['status', 'updatedAt', 'partialOffer'])
+              && nw.partialOffer is number && nw.partialOffer > 0 && nw.partialOffer < old.amount)
+          || (me == old.ownerId && old.status == 'offered' && nw.status == 'accepted'
+              && changedOnly(['status', 'updatedAt', 'resolvedAmount'])
+              && nw.resolvedAmount == old.partialOffer && debtFromClaim(resource.id))
+          || (me == old.ownerId && old.status == 'offered' && nw.status == 'disputed'
+              && changedOnly(['status', 'updatedAt']))
+          || (me == old.ownerId && old.status == 'open' && nw.status == 'withdrawn'
+              && changedOnly(['status', 'updatedAt']));
+    }
+
+    match /claims/{claimId} {
+      allow read: if signedIn()
+        && (resource.data.ownerId == request.auth.uid || resource.data.renterId == request.auth.uid);
+      allow create: if signedIn() && notBanned() && validClaim(request.resource.data, claimId);
+      allow update: if signedIn() && notBanned() && validClaimUpdate();
+      allow delete: if false;
+    }
+
+    function validDebtCreate(d, id) {
+      let c = getAfter(claimPath(id)).data;
+      let before = get(claimPath(id)).data;
+      let due = d.dueAt.toMillis() - request.time.toMillis();
+      return d.keys().hasOnly(['claimId', 'bookingId', 'itemTitle', 'debtorId', 'creditorId',
+                               'debtorName', 'creditorName', 'amount', 'status', 'collected', 'dueAt', 'createdAt'])
+        && d.claimId == id && d.bookingId == id
+        && before.status in ['open', 'offered'] && c.status == 'accepted'
+        && d.debtorId == c.renterId && d.creditorId == c.ownerId
+        && d.amount == c.resolvedAmount && d.amount <= c.declaredValue
+        && d.status == 'open' && d.collected == false
+        && due >= 863400000 && due <= 864600000
+        && d.createdAt == request.time
+        && (request.auth.uid == d.debtorId || request.auth.uid == d.creditorId);
+    }
+    // The debtor pays from the wallet: the balance drops by exactly the debt.
+    function debtPaidFromWallet(amount) {
+      let w = /databases/$(database)/documents/wallets/$(request.auth.uid);
+      return getAfter(w).data.balance == get(w).data.balance - amount;
+    }
+
+    match /debts/{debtId} {
+      allow read: if signedIn()
+        && (resource.data.debtorId == request.auth.uid || resource.data.creditorId == request.auth.uid);
+      allow create: if signedIn() && notBanned() && validDebtCreate(request.resource.data, debtId);
+      allow update: if signedIn() && notBanned()
+        && ((request.auth.uid == resource.data.debtorId && resource.data.status == 'open'
+             && request.resource.data.status == 'paid'
+             && changedOnly(['status', 'paidAt']) && debtPaidFromWallet(resource.data.amount))
+            || (request.auth.uid == resource.data.creditorId && resource.data.status == 'paid'
+                && resource.data.collected == false && request.resource.data.collected == true
+                && changedOnly(['collected'])));
+      allow delete: if false;
+    }
+
+    // users/{uid} rules call these. `id` is the debt named in lastDebtId.
+    function debtStarts(uid, id) {
+      let d = getAfter(debtPath(id)).data;
+      let before = resource.data;
+      let after = request.resource.data;
+      return !exists(debtPath(id)) && existsAfter(debtPath(id))
+        && d.debtorId == uid
+        && (request.auth.uid == uid || request.auth.uid == d.creditorId)
+        && after.frozen == true && after.pastDamage == true
+        && after.openDebts == before.get('openDebts', 0) + 1
+        && after.trustScore == before.trustScore - 20;
+    }
+    function debtRepaid(uid, id) {
+      let b = get(debtPath(id)).data;
+      let a = getAfter(debtPath(id)).data;
+      let before = resource.data;
+      let after = request.resource.data;
+      return request.auth.uid == uid && b.debtorId == uid
+        && b.status == 'open' && a.status == 'paid'
+        && after.openDebts == before.get('openDebts', 0) - 1
+        && after.frozen == (after.openDebts > 0)
+        && after.trustScore == before.trustScore + 10;
+    }
+    function debtDefaulted(uid, id) {
+      let d = get(debtPath(id)).data;
+      return d.debtorId == uid && d.status == 'open'
+        && (request.auth.uid == uid || request.auth.uid == d.creditorId)
+        && d.dueAt.toMillis() < request.time.toMillis()
+        && request.resource.data.banned == true;
+    }
+    function debtCollectOk(uid) {
+      let p = debtPath(request.resource.data.lastDebtCollected);
+      let b = get(p).data;
+      let a = getAfter(p).data;
+      return b.creditorId == uid && b.status == 'paid' && b.collected == false
+        && a.collected == true
+        && request.resource.data.balance == resource.data.balance + b.amount;
+    }
+
+    // ---------- Step 7: things the admin client reads ----------
+    // A user asks for the Trusted badge; the admin client approves (sets users.trusted) or rejects.
+    // Everything else the admin does (warnings, freezes, bans, upheld claims, removed listings) is
+    // written through the Admin SDK, which bypasses these rules. The `admins` collection is not
+    // readable or writable from the app at all (catch-all below).
+    match /trustRequests/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['name', 'status', 'createdAt'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time;
+      allow update: if isOwner(uid)
+        && resource.data.status == 'rejected'
+        && request.resource.data.keys().hasOnly(['name', 'status', 'createdAt'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time;
+      allow delete: if false;
+    }
+
+    // ---------- Step 8: friends ----------
+    // A request lives at friendRequests/{from}_{to}. Accepting is one batch: the request becomes
+    // accepted and both friends/{uid}/list/{friendUid} documents are created.
+    function reqPath(a, b) {
+      return /databases/$(database)/documents/friendRequests/$(a + '_' + b);
+    }
+    // The request from `a` to `b` is pending now and accepted after this batch, by `b`.
+    function acceptedBetween(a, b) {
+      let p = reqPath(a, b);
+      return exists(p) && existsAfter(p)
+        && get(p).data.status == 'pending'
+        && getAfter(p).data.status == 'accepted'
+        && getAfter(p).data.to == request.auth.uid;
+    }
+
+    match /friendRequests/{reqId} {
+      allow read: if signedIn()
+        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      allow create: if signedIn() && notBanned()
+        && request.resource.data.keys().hasOnly(['from', 'to', 'fromName', 'toName', 'status', 'createdAt'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to != request.auth.uid
+        && reqId == request.resource.data.from + '_' + request.resource.data.to
+        && request.resource.data.status == 'pending'
+        && request.resource.data.fromName is string && request.resource.data.fromName.size() <= 60
+        && request.resource.data.toName is string && request.resource.data.toName.size() <= 60
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && notBanned()
+        && (
+          // the person asked accepts or declines
+          (request.auth.uid == resource.data.to && resource.data.status == 'pending'
+            && request.resource.data.status in ['accepted', 'declined']
+            && changedOnly(['status']))
+          // the sender asks again after a decline, or after the friendship ended
+          || (request.auth.uid == resource.data.from && resource.data.status in ['declined', 'accepted']
+            && request.resource.data.status == 'pending'
+            && changedOnly(['status', 'createdAt'])
+            && request.resource.data.createdAt == request.time)
+        );
+      // The sender can cancel a request.
+      allow delete: if signedIn() && resource.data.from == request.auth.uid;
+    }
+
+    match /friends/{uid}/list/{friendUid} {
+      allow read: if isOwner(uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['name', 'since'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60
+        && request.resource.data.since == request.time
+        && (acceptedBetween(uid, friendUid) || acceptedBetween(friendUid, uid));
+      allow update: if false;
+      // Either person can end the friendship (the app deletes both documents in one batch).
+      allow delete: if signedIn() && (request.auth.uid == uid || request.auth.uid == friendUid);
     }
 
     match /{document=**} {

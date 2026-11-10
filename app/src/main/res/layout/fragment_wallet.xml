@@ -71,6 +71,13 @@
             android:text="@string/add_2000" />
     </LinearLayout>
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnExport"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/wallet_export" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

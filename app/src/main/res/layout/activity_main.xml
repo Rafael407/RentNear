@@ -5,6 +5,16 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
+    <!-- Shown while airplane mode, low battery or battery saver is active (SystemEventReceiver) -->
+    <TextView
+        android:id="@+id/bannerSystem"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#B26A00"
+        android:padding="10dp"
+        android:textColor="#FFFFFF"
+        android:visibility="gone" />
+
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/navHost"
         android:name="androidx.navigation.fragment.NavHostFragment"

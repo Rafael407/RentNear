@@ -11,7 +11,9 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.rentnear.app.data.cloudinary.CloudinaryUploader;
 import com.rentnear.app.model.Booking;
+import com.rentnear.app.model.Claim;
 import com.rentnear.app.repository.BookingRepository;
+import com.rentnear.app.repository.ClaimRepository;
 import com.rentnear.app.repository.ReviewRepository;
 import com.rentnear.app.repository.WalletRepository;
 import com.rentnear.app.util.Done;
@@ -37,6 +39,7 @@ public class BookingDetailViewModel extends ViewModel {
     private final BookingRepository repo = new BookingRepository();
     private final WalletRepository wallet = new WalletRepository();
     private final ReviewRepository reviews = new ReviewRepository();
+    private final ClaimRepository claims = new ClaimRepository();
     private final String me;
 
     private final MutableLiveData<Booking> booking = new MutableLiveData<>();
@@ -46,11 +49,15 @@ public class BookingDetailViewModel extends ViewModel {
     private final MutableLiveData<String> info = new MutableLiveData<>();
     /** Whether I have already reviewed this booking; null until known. */
     private final MutableLiveData<Boolean> reviewed = new MutableLiveData<>();
+    /** The claim filed for this booking, if any; checked once the item has been returned. */
+    private final MutableLiveData<Claim> claim = new MutableLiveData<>();
+    private final MutableLiveData<Boolean> claimChecked = new MutableLiveData<>(false);
 
     private String bookingId;
     private ListenerRegistration registration;
     private boolean overdueMarked;
     private boolean reviewChecked;
+    private boolean claimLookup;
 
     public BookingDetailViewModel() {
         String uid = FirebaseAuth.getInstance().getUid();
@@ -64,6 +71,8 @@ public class BookingDetailViewModel extends ViewModel {
     public LiveData<String> error() { return error; }
     public LiveData<String> info() { return info; }
     public LiveData<Boolean> reviewed() { return reviewed; }
+    public LiveData<Claim> claim() { return claim; }
+    public LiveData<Boolean> claimChecked() { return claimChecked; }
 
     public void init(String id) {
         if (bookingId == null) bookingId = id;
@@ -75,6 +84,10 @@ public class BookingDetailViewModel extends ViewModel {
             @Override
             public void onBooking(Booking b) {
                 booking.setValue(b);
+                if (!claimLookup && (Booking.RETURNED.equals(b.status) || Booking.COMPLETED.equals(b.status))) {
+                    claimLookup = true;
+                    findClaim(b);
+                }
                 if (!reviewChecked && Booking.COMPLETED.equals(b.status)) {
                     reviewChecked = true;
                     reviews.hasReviewed(b.id, me, (done, err) -> {
@@ -282,6 +295,48 @@ public class BookingDetailViewModel extends ViewModel {
             }
             reviewed.setValue(true);
             info.setValue("Thanks! Review saved. You earned " + ReviewRepository.REVIEWER_POINTS + " points.");
+        });
+    }
+
+    // ------------------------------------------------------------------ step 6: claims
+
+    private void findClaim(Booking b) {
+        claims.find(b, me, (c, err) -> {
+            if (err == null) {
+                claim.setValue(c);
+                claimChecked.setValue(true);
+            } else {
+                claimLookup = false; // try again on the next update
+            }
+        });
+    }
+
+    /** Owner: asks for money for damage. Allowed for 24 hours after the return. */
+    public void fileClaim(double amount, String reason) {
+        Booking b = booking.getValue();
+        if (b == null) return;
+        if (!ClaimRepository.canFile(b)) {
+            error.setValue("Claims can only be filed within 24 hours of the return.");
+            return;
+        }
+        if (amount <= 0 || amount > b.declaredValue) {
+            error.setValue("The amount must be more than 0 and at most the item's replacement value.");
+            return;
+        }
+        if (reason == null || reason.trim().isEmpty()) {
+            error.setValue("Describe the damage.");
+            return;
+        }
+        busy.setValue(true);
+        claims.create(b, amount, reason, err -> {
+            if (err != null) {
+                busy.setValue(false);
+                error.setValue(err);
+                return;
+            }
+            info.setValue("Claim sent to the renter.");
+            busy.setValue(false);
+            findClaim(b);
         });
     }
 

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Listings: create, load one, and geohash range search for nearby items. */
 public class ItemRepository {
@@ -46,7 +47,7 @@ public class ItemRepository {
      * range edges are removed by an exact distance check. One-shot reads (no live listener)
      * keep quota use low.
      */
-    public void nearby(GeoLocation center, double radiusM, String viewerUid,
+    public void nearby(GeoLocation center, double radiusM, String viewerUid, Set<String> friendIds,
                        MutableLiveData<Result<List<Item>>> out) {
         List<GeoQueryBounds> bounds = GeoFireUtils.getGeoHashQueryBounds(center, radiusM);
         List<Task<QuerySnapshot>> tasks = new ArrayList<>();
@@ -77,7 +78,7 @@ public class ItemRepository {
                     double dist = GeoFireUtils.getDistanceBetween(
                             new GeoLocation(item.lat, item.lng), center);
                     if (dist > radiusM) continue;
-                    if (!visibleTo(item, viewerUid)) continue;
+                    if (!visibleTo(item, viewerUid, friendIds)) continue;
                     item.distanceM = dist;
                     found.put(item.id, item);
                 }
@@ -91,12 +92,14 @@ public class ItemRepository {
     }
 
     /**
-     * Friends-only items are visible to their owner for now. Step 2 has no friends list yet, so
-     * other users do not see them until the friends feature lands.
+     * Friends-only items are shown to their owner and to the owner's friends. This is decided in the
+     * app: the Firestore rules let any signed-in user read listings, because a rule cannot be
+     * checked against a range query. See the README.
      */
-    private static boolean visibleTo(Item item, String viewerUid) {
+    private static boolean visibleTo(Item item, String viewerUid, Set<String> friendIds) {
         if (Item.AUDIENCE_FRIENDS.equals(item.audience)) {
-            return item.ownerId != null && item.ownerId.equals(viewerUid);
+            return item.ownerId != null
+                    && (item.ownerId.equals(viewerUid) || (friendIds != null && friendIds.contains(item.ownerId)));
         }
         return true;
     }

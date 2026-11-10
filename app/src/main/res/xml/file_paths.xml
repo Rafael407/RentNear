@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- CsvExport writes here; only files in this folder can be shared. -->
+    <cache-path name="exports" path="exports/" />
+</paths>

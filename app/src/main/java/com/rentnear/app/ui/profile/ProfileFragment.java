@@ -44,12 +44,39 @@ public class ProfileFragment extends Fragment {
                     String.format(java.util.Locale.US, "%.0f", r.data.trustScore), r.data.points,
                     com.rentnear.app.util.Tiers.forPoints(r.data.points)));
             b.tvBadge.setVisibility(r.data.trusted ? View.VISIBLE : View.GONE);
+            b.tvFrozen.setVisibility(r.data.frozen ? View.VISIBLE : View.GONE);
+            boolean warned = r.data.warning != null && !r.data.warning.isEmpty();
+            b.tvWarning.setVisibility(warned ? View.VISIBLE : View.GONE);
+            if (warned) b.tvWarning.setText(getString(com.rentnear.app.R.string.warning_from_admin, r.data.warning));
+            b.btnTrusted.setVisibility(r.data.trusted ? View.GONE : View.VISIBLE);
         });
         if (u != null) new com.rentnear.app.repository.UserRepository().load(u.getUid(), live);
 
         b.btnWallet.setOnClickListener(v ->
                 androidx.navigation.fragment.NavHostFragment.findNavController(this)
                         .navigate(com.rentnear.app.R.id.walletFragment));
+        b.btnTrusted.setOnClickListener(v -> {
+            if (u == null) return;
+            new com.rentnear.app.repository.UserRepository().requestTrusted(u.getUid(), u.getDisplayName(),
+                    err -> {
+                        if (getContext() == null) return;
+                        android.widget.Toast.makeText(requireContext(),
+                                err == null ? getString(com.rentnear.app.R.string.trusted_requested) : err,
+                                android.widget.Toast.LENGTH_LONG).show();
+                    });
+        });
+        b.btnFriends.setOnClickListener(v ->
+                androidx.navigation.fragment.NavHostFragment.findNavController(this)
+                        .navigate(com.rentnear.app.R.id.friendsFragment));
+        b.btnSettings.setOnClickListener(v ->
+                androidx.navigation.fragment.NavHostFragment.findNavController(this)
+                        .navigate(com.rentnear.app.R.id.settingsFragment));
+        b.btnClaims.setOnClickListener(v ->
+                androidx.navigation.fragment.NavHostFragment.findNavController(this)
+                        .navigate(com.rentnear.app.R.id.claimsFragment));
+        b.btnDebts.setOnClickListener(v ->
+                androidx.navigation.fragment.NavHostFragment.findNavController(this)
+                        .navigate(com.rentnear.app.R.id.debtsFragment));
         b.btnLeaderboard.setOnClickListener(v ->
                 androidx.navigation.fragment.NavHostFragment.findNavController(this)
                         .navigate(com.rentnear.app.R.id.leaderboardFragment));

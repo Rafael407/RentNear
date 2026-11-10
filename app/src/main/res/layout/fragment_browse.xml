@@ -60,6 +60,15 @@
         </HorizontalScrollView>
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/tvCached"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp"
+        android:text="@string/showing_cached"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:visibility="gone" />
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -80,6 +89,16 @@
                 android:paddingEnd="12dp"
                 android:paddingBottom="88dp" />
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnMore"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:text="@string/load_more"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/tvEmpty"

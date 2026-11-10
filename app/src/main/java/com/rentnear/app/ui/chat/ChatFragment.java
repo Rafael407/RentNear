@@ -107,8 +107,29 @@ public class ChatFragment extends Fragment {
         return b.getRoot();
     }
 
+    private final com.rentnear.app.repository.PresenceRepository presence =
+            new com.rentnear.app.repository.PresenceRepository();
+    private String watchedUid;
+
     private void showChat(@Nullable Chat c) {
         if (c == null || b == null) return;
+        String other = c.otherUid(vm.me());
+        if (other != null && !other.equals(watchedUid)) {
+            watchedUid = other;
+            presence.watch(other, (online, lastSeen) -> {
+                if (b == null) return;
+                if (online) {
+                    b.tvPresence.setText(R.string.presence_online);
+                } else if (lastSeen > 0) {
+                    b.tvPresence.setText(getString(R.string.presence_last_seen,
+                            android.text.format.DateUtils.getRelativeTimeSpanString(lastSeen,
+                                    System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS)));
+                } else {
+                    b.tvPresence.setText("");
+                }
+                b.tvPresence.setVisibility(online || lastSeen > 0 ? View.VISIBLE : View.GONE);
+            });
+        }
         b.tvChatName.setText(c.otherName(vm.me()));
         b.tvChatItem.setText(c.itemTitle);
         if (c.acceptedAmount > 0) {
@@ -246,6 +267,8 @@ public class ChatFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        presence.stopWatching();
+        watchedUid = null;
         super.onDestroyView();
         b = null;
     }

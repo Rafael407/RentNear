@@ -14,6 +14,7 @@ public class RentNearApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        com.rentnear.app.util.Prefs.init(this);
         MapLibre.getInstance(this);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -22,6 +23,12 @@ public class RentNearApp extends Application {
             ch.setDescription("Reminders before a rented item is due back");
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(ch);
+
+            NotificationChannel timer = new NotificationChannel(
+                    com.rentnear.app.services.RentalTimerService.CHANNEL_ID,
+                    "Rental countdown", NotificationManager.IMPORTANCE_LOW);
+            timer.setDescription("Ongoing countdown while a rental is in use");
+            if (nm != null) nm.createNotificationChannel(timer);
         }
     }
 }

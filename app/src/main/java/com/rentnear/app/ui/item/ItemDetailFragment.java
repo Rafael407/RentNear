@@ -118,6 +118,27 @@ public class ItemDetailFragment extends Fragment {
             drawRoute(r.data);
         });
 
+        // Implicit intents: any maps app can show the pickup point, any app can take the shared text.
+        b.btnMaps.setOnClickListener(v -> {
+            if (item == null) return;
+            android.net.Uri geo = android.net.Uri.parse("geo:" + item.lat + "," + item.lng + "?q="
+                    + item.lat + "," + item.lng + "(" + android.net.Uri.encode(item.title) + ")");
+            try {
+                startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, geo));
+            } catch (android.content.ActivityNotFoundException e) {
+                Toast.makeText(requireContext(), R.string.no_maps_app, Toast.LENGTH_SHORT).show();
+            }
+        });
+        b.btnShare.setOnClickListener(v -> {
+            if (item == null) return;
+            String text = item.title + " \u2013 " + com.rentnear.app.util.Format.price(item)
+                    + (item.address == null || item.address.isEmpty() ? "" : "\nPickup: " + item.address)
+                    + "\nFound on RentNear";
+            android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(android.content.Intent.EXTRA_TEXT, text);
+            startActivity(android.content.Intent.createChooser(send, getString(R.string.item_share)));
+        });
         b.btnReviews.setOnClickListener(v -> {
             if (item == null) return;
             Bundle args = new Bundle();
