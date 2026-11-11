@@ -63,6 +63,15 @@ public class MapFragment extends Fragment {
         b.mapView.onCreate(savedInstanceState);
         b.mapView.getMapAsync(m -> {
             map = m;
+            // Start near the user instead of the whole-world view: the real location if the search
+            // already has it, otherwise the fallback centre. The real position recentres the map later.
+            GeoLocation start = vm.location().getValue();
+            if (start == null) start = com.rentnear.app.util.LocationProvider.DEFAULT;
+            m.setCameraPosition(new CameraPosition.Builder()
+                    .target(new LatLng(start.latitude, start.longitude))
+                    .zoom(13.0)
+                    .build());
+            m.setMinZoomPreference(3.0);
             m.setStyle(new Style.Builder().fromUri(MapConfig.STYLE_URL), s -> {
                 style = s;
                 s.addSource(new GeoJsonSource(ME_SRC));
@@ -74,7 +83,7 @@ public class MapFragment extends Fragment {
                 s.addSource(new GeoJsonSource(ITEMS_SRC));
                 s.addLayer(new CircleLayer(ITEMS_LAYER, ITEMS_SRC).withProperties(
                         PropertyFactory.circleRadius(10f),
-                        PropertyFactory.circleColor(Color.parseColor("#0F766E")),
+                        PropertyFactory.circleColor(Color.parseColor("#16A34A")),
                         PropertyFactory.circleStrokeWidth(2.5f),
                         PropertyFactory.circleStrokeColor(Color.WHITE)));
                 applyLocation(vm.location().getValue());

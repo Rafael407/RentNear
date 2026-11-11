@@ -1,199 +1,297 @@
-# RentNear (Android)
+# RentNear
 
-Rent items from people nearby: list something you own, chat and agree a price, book it, hand it over with a QR code and condition photos, get it back, and settle damage claims. Everything runs on free plans with no billing card, and all money is a **demo wallet**.
+RentNear is an Android app for renting things from people nearby. An owner lists an item; a renter finds it on a map, negotiates the price in chat, books it, pays from a demo wallet, collects it with a QR handover and condition photos, returns it the same way, and both sides review each other. Damage claims, late fees, debts, a trust score and a points leaderboard keep it honest.
 
-The admin tool is a separate JavaFX project, `RentNearAdmin` (see its README).
+Everything runs on free plans with **no billing card**, and all money is a **demo wallet** (currency ৳). A separate JavaFX desktop client, `RentNearAdmin`, is used by moderators.
 
-**Status: all 8 build steps are in place.** The code was written without being compiled or run on a device, and the Firestore rules were written without the emulator. Expect a few build errors on the first Gradle sync and possibly a rules error on first publish; send the error text and it can be fixed.
+> **Status:** version 0.9. The code was written without being compiled or run on a device, and the Firestore rules were written without the Firebase emulator. Expect a few build errors on the first Gradle sync and possibly a rules error on first publish. Paste the error text and it can be fixed.
 
-## What the app does
-- **Account:** email/password (with verification) or Google sign-in; banned accounts are signed out.
-- **Home:** Map and Browse tabs over one nearby search (5, 10 or 20 km), category filter, sort by distance, price or rating, 20 listings at a time, last search saved for instant and offline display.
-- **Listings:** title, description, category, price per hour or day, replacement value, up to 4 photos, pickup address, audience (Everyone or **Friends only**).
-- **Chat:** per-item conversations with text, photos and price offers (accept, counter, decline); block and report.
-- **Bookings:** request or book at an agreed price, owner accepts, renter pays from the wallet (held until the item is back).
-- **Handover and return:** owner takes condition photos and shows a QR code, renter scans it and takes photos; the same on return, with late fees after a 15-minute grace period; the owner confirms and the money is released.
-- **Reminders:** local notifications before a rental is due and before a debt deadline.
-- **Reviews, trust score, points, leaderboard** after each completed rental.
-- **Claims and debts:** damage claims within 24 hours of the return, a 10-day debt, freeze while unpaid, ban after the deadline.
-- **Friends:** add by email; friends see each other's Friends-only listings.
-- **Settings:** search radius, reminders on or off, clear saved listings.
+---
 
-## Stack (all free)
-Java 17, XML + Material 3, ViewBinding, MVVM (ViewModel + LiveData + Repository), Navigation component, Firebase Spark (Auth + Firestore), MapLibre with OpenFreeMap tiles, Geoapify free plan (address search, walking routes), Cloudinary free plan (photos), CameraX, ML Kit barcode scanning, ZXing, Room, WorkManager.
+## Contents
+1. [Features](#1-features)
+2. [Tech stack](#2-tech-stack)
+3. [Setup](#3-setup)
+4. [Trying it with two accounts](#4-trying-it-with-two-accounts)
+5. [How the app works](#5-how-the-app-works)
+6. [Project structure](#6-project-structure)
+7. [Data model (Firestore)](#7-data-model-firestore)
+8. [Realtime Database (presence)](#8-realtime-database-presence)
+9. [Android components](#9-android-components)
+10. [Security model and honest limits](#10-security-model-and-honest-limits)
+11. [Design decisions](#11-design-decisions)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Admin client](#13-admin-client)
+14. [Not included](#14-not-included)
 
-## Setup
-1. Open this folder in Android Studio (Koala or newer) with a JDK between 17 and 21 for Gradle. Let it sync.
-2. Create a Firebase project on the **Spark** plan at https://console.firebase.google.com and add an Android app with package name `com.rentnear.app`.
-3. Add your debug SHA-1 (needed for Google sign-in): run `./gradlew signingReport` and copy the `debug` SHA-1 into the Firebase project settings.
-4. Authentication > Sign-in method: enable **Email/Password** and **Google**.
-5. Firestore Database: create a database, then paste `firestore.rules` into the Rules tab and publish.
-6. Download `google-services.json` after enabling Google sign-in and put it in `app/` (git-ignored).
-7. **Geoapify** (address search, walking routes): free project at https://myprojects.geoapify.com, copy the API key.
-8. **Cloudinary** (photos): free account, note the *cloud name*, then Settings > Upload > Upload presets > add a preset with **Signing mode: Unsigned**.
-9. Copy the three lines from `local.properties.example` into `local.properties` and fill them in. Rebuild after editing.
-10. Run on a device or emulator with Google Play services (the camera features need a real camera or an emulator webcam).
+---
+
+## 1. Features
+
+| Area | What it does |
+|---|---|
+| **Account** | Email/password with verification, or Google sign-in. Banned accounts are signed out. |
+| **Home** | Map and Browse tabs over one nearby search (5, 10 or 20 km). Listings appear as green pins; tap one for a preview card. Category filter, sort by distance, price or rating, 20 listings at a time. The last search is cached in Room for instant and offline display. |
+| **Listings** | Title, description, category, price per hour or day, replacement value, up to 4 photos, pickup address (search or current location), audience (**Everyone** or **Friends only**). |
+| **Item detail** | Photo strip, price, rating, owner, pickup map with walking route and time, buttons for Message, Book, Open in Maps, Share and Reviews. |
+| **Chat** | One conversation per item and renter: text, photos and price offers (accept, counter, decline). Block and report. Unread badge. Header shows the other person's **Online / Last seen**. |
+| **Bookings** | Request (or book at an agreed price), owner accepts, renter pays from the wallet. The amount is held on the booking until the return is confirmed. |
+| **Handover and return** | Owner takes condition photos and shows a QR code; renter scans it and takes photos. The same on return. Late fees after a 15-minute grace period. |
+| **Wallet** | Demo balance (৳2000 on sign-up, top-up buttons), history, **CSV export** through the share sheet. |
+| **Reviews and points** | Both sides review after completion. Trust score, points, tiers (Bronze, Silver, Gold, Platinum) and a leaderboard. |
+| **Claims and debts** | Damage claim within 24 hours of return; accepted claims become a debt with a 10-day deadline, freeze, and ban if unpaid. |
+| **Friends** | Add by email or **pick from contacts**; friends see each other's Friends-only listings. |
+| **Trusted badge** | Needed to rent items worth more than ৳15,000; requested in Profile, granted by an admin. |
+| **Reminders** | Local notifications before a rental is due and before a debt deadline; a foreground **countdown notification** while a rental is in use. |
+| **System awareness** | Banner and toast when airplane mode, low battery or battery saver changes. |
+| **Settings** | Search radius, reminders on or off, clear saved listings. |
+
+---
+
+## 2. Tech stack
+
+| Layer | Choice |
+|---|---|
+| Language | Java 17, XML layouts, Material 3, ViewBinding |
+| Architecture | MVVM: ViewModel + LiveData + Repository |
+| Navigation | Navigation component; one `MainActivity` with fragments, plus three auth activities |
+| Backend | Firebase **Spark** plan: Authentication, Cloud Firestore, Realtime Database. No Cloud Functions, no FCM |
+| Pictures | Cloudinary free plan, unsigned upload; only URLs are stored in Firestore |
+| External API | Geoapify free plan (address search, reverse geocoding, walking routes) via Retrofit + Gson |
+| Maps | MapLibre with OpenFreeMap tiles (no key) |
+| Geo queries | GeoFire geohash ranges |
+| Device | CameraX, ML Kit barcode scanning, ZXing (QR generation), WorkManager, notifications, Contacts |
+| Local storage | Room (cached search), SharedPreferences (settings) |
+
+---
+
+## 3. Setup
+
+### 3.1 Android Studio
+Open this folder in Android Studio (Koala or newer). Set **Gradle JDK to 17–21** (Settings > Build > Gradle). A newer JDK such as 25 will fail with Gradle 8.7. Let it sync.
+
+### 3.2 Firebase
+1. Create a project on the **Spark** plan at <https://console.firebase.google.com>.
+2. Add an Android app with package name `com.rentnear.app`.
+3. Add your debug SHA-1 (needed for Google sign-in): run `./gradlew signingReport` and paste the `debug` SHA-1 in Project settings.
+4. **Authentication > Sign-in method:** enable **Email/Password** and **Google**.
+5. **Firestore Database:** create a database, open the **Rules** tab, paste `firestore.rules`, publish.
+6. **Realtime Database:** Build > Realtime Database > Create database, open **Rules**, paste `database.rules.json`, publish. (Needed only for the Online / Last seen feature.)
+7. Download `google-services.json` (after steps 4 and 6, so it contains the Google client and database URL) and put it in `app/`. It is git-ignored.
+
+### 3.3 Third-party keys (free, no card)
+1. **Geoapify:** create a project at <https://myprojects.geoapify.com> and copy the API key.
+2. **Cloudinary:** create an account, note the *cloud name*, then Settings > Upload > Upload presets > add a preset with **Signing mode: Unsigned**.
+3. Copy the three lines of `local.properties.example` into `local.properties` and fill them in:
+   ```
+   GEOAPIFY_KEY=...
+   CLOUDINARY_CLOUD=...
+   CLOUDINARY_PRESET=...
+   ```
+   Rebuild after editing.
 
 Without the Geoapify key the map and listings still work, but address search and walking routes are off. Without the Cloudinary values, publishing a listing or sending a photo fails with a clear message.
 
-## Try it with two accounts
-1. Account A lists an item. Account B opens it, messages A, and requests a booking.
-2. A accepts; B pays from the wallet (**Profile > Wallet** has demo top-ups).
-3. A takes condition photos and shows the handover QR; B scans it, takes photos and confirms.
-4. At the end, A shows the return QR; B scans it and returns; A takes photos and confirms. Both leave reviews.
-5. To test claims: after a return, A taps **Report damage** (within 24 hours); B accepts, then pays under **Profile > Debts**.
-6. To test the admin: follow `RentNearAdmin/README.md`.
+### 3.4 Run
+Use a device or emulator with Google Play services. The camera features need a real camera or an emulator webcam. Allow notifications (Android 13+) when asked.
 
-## Firestore indexes
-Every query in the app uses a single field or equality filters only, so no composite index has to be created. If the console ever prints an index link in a Logcat error, open it and press Create (free).
+### 3.5 Firestore indexes
+Every query uses a single field or equality filters, so no composite index is needed. If Logcat ever prints an index link, open it and press **Create** (free).
 
-## Security model and honest limits
-There are no Cloud Functions (they need the paid Blaze plan) and no push notifications, so the **app writes** wallet balances, trust scores, points and debt records, and the **Firestore rules check each write**: allowed state transitions, exact amounts (payments, late fees, payouts, score and point changes), who may write what, one review per booking, and the 10-day deadline. A determined user who rebuilds the app could still tamper with some values; the weak spots are:
-- **Demo wallet:** top-ups are capped per write (৳5000) but not in total. It is demo money, so this is by design.
-- **Friends-only listings** are hidden in the app, but the rules let any signed-in user read listings, because a rule cannot be proven for a range query. Someone reading Firestore directly could see them, including the pickup address.
-- **Scores and points** change only together with a valid new review or debt, by exact amounts, but the writer is the client.
-- **Bans and freezes** take effect when the app next reads the profile. A debtor who never opens the app is banned when the owner taps **Ban** on the overdue debt or an admin runs the sweep in the admin client.
-- **Reminders** use WorkManager, so their timing is approximate.
-- Production would move wallet, score, debt and ban logic into Cloud Functions.
+---
 
-## Decisions
-- Debt deadline: 10 days (reminders at 7, 3 and 1 days left). Score penalty 20 for a debt, 10 back on repayment.
-- Late fee: half the rate per started unit after a 15-minute grace period, capped at the booking total.
-- ID verification is replaced by an admin-granted **Trusted** badge (needed to rent items worth more than ৳15,000).
-- Currency symbol ৳ (`Format.CURRENCY`).
+## 4. Trying it with two accounts
 
-## Not included
-- Real payments, push notifications, message history caching, and an item edit screen (owners can currently create and, in the rules, deactivate listings, but there is no edit UI).
+Use two phones or two emulators. **A** = owner, **B** = renter.
 
-# Details by build step
-The sections below are the notes written as each step was built.
+1. B registers and verifies the email. A lists an item.
+2. B opens the item, messages A, sends an offer; A accepts it.
+3. B taps **Book at agreed price**; A accepts the request; B pays (**Profile > Wallet** has demo top-ups).
+4. A takes before-photos and shows the handover QR. B scans it, takes photos and confirms. The rental is now **in use**. B can tap **Show countdown in notification**.
+5. A shows the return QR. B scans it, takes photos and taps **Return item**. A takes after-photos and confirms; the payment moves to A's wallet.
+6. Both leave reviews. Check **Profile > Leaderboard**.
+7. Claims: after a return, A taps **Report damage** within 24 hours. B accepts, then pays under **Profile > Debts**.
+8. Friends: **Profile > Friends**, add by email or from contacts; the other account accepts.
+9. Admin: follow `RentNearAdmin/README.md`.
 
-### Step 7 (admin client): what to do
-**Republish `firestore.rules`**, rebuild the app, then follow `RentNearAdmin/README.md` to set up the admin client (service account key, `admins/{uid}` document).
+`DEMO.md` maps each part of a course demonstration to a screen and a talking point.
 
-### What changed in the app for step 7
-- **Profile:** **Request Trusted badge** (creates `trustRequests/{uid}`; the admin approves or rejects), and a banner showing a warning from an admin.
-- **Rules:** `trustRequests`; items removed by an admin cannot be edited by the owner. `admins` stays closed to the app.
-- Admin actions (warn, freeze, ban, upheld claims, removed listings) are written through the Admin SDK, so they do not need client rules.
+---
 
-### Step 6 (claims, debts, freeze, ban): what to do
-No new keys. **Republish `firestore.rules`**, rebuild, and test with two accounts after a finished rental: the owner taps **Report damage** on the returned booking, the renter opens **Profile > Claims** and accepts, then pays under **Profile > Debts**.
+## 5. How the app works
 
-### What works in step 6
-- **File a claim:** the owner can claim up to the item's replacement value within 24 hours of the return, with a description. The booking's handover and return photos stay as evidence. One claim per booking.
-- **Renter's choices:** accept (debt created), dispute (goes to an admin in step 7), or offer a smaller amount. The owner then accepts the offer (debt for that amount) or rejects it (dispute). The owner can withdraw a claim until the renter responds.
-- **Debt:** created in the same write as the acceptance. It is due **10 days** later, never exceeds the declared value, **freezes** the renter, costs **20 trust score** and sets the past-damage flag. A frozen account cannot list items, request bookings, accept requests or pay for a booking, but can still return items and decline requests.
-- **Repay:** Profile > Debts > Pay takes the amount from the demo wallet, unfreezes the account when it was the last open debt, and gives back 10 trust score. The owner then taps **Collect** to move the money to their wallet.
-- **Reminders:** local notifications 7, 3 and 1 days before the deadline (timing approximate); tapping one opens Debts.
-- **Ban:** after the deadline the account is banned. The app does this itself when the debtor next opens it (and signs out), and the person owed can tap **Ban account** on an overdue debt. The rules allow a ban only when the debt is open and past due.
-- Disputed claims wait for an admin; the admin client (step 7) will uphold or reject them.
+### 5.1 Booking life cycle
 
-### Known gaps in step 6
-- Without Cloud Functions, nothing bans a debtor who never opens the app until the owner taps Ban or the admin sweep (step 7) runs.
-- Score recovery is only +10 on repayment plus whatever reviews add later.
-- Rules are untested on the emulator; send the error text if the console rejects them.
+```
+requested ──accept──► accepted ──pay──► paid ──handover (QR + photos)──► handed_over
+    │                    │                                                   │
+ decline/cancel       cancel                                    past end time ▼
+                                                                         overdue
+                                                                             │
+handed_over / overdue ──return (QR + photos, late fee)──► returned ──owner confirms──► completed
+                                                             │
+                                          24 h with no action: renter closes it ──► completed
+```
 
-### Step 5 (reviews, score, points, leaderboard): what to do
-No new keys. **Republish `firestore.rules`** (new `reviews` rules plus score/rating updates), rebuild, and test with two accounts: finish a rental, then each side taps **Leave a review** on the completed booking.
+* **Payment:** one batch makes the booking `paid`, lowers the wallet by exactly the total, stores the amount as `escrow` on the booking and adds a history line.
+* **Handover and return:** secret codes live in `bookings/{id}/secret/codes`, readable only by the owner. The rules compare the scanned code to it, so a renter cannot fake a scan.
+* **Late fee:** half the rate per started unit after a 15-minute grace period, capped at the booking total, taken from the renter's wallet at return.
+* **Payout:** on confirmation the escrow plus any late fee goes to the owner's wallet.
+* **Overlap check:** accepting is refused if it overlaps another accepted booking for the same item (checked in the app).
 
-### What works in step 5
-- **Reviews:** once a booking is `completed`, the renter and the owner can each leave one review (1 to 5 stars, optional comment up to 500 characters). The review id is `bookingId_reviewerUid`, so a second one is refused.
-- **Item rating:** a renter's review updates the item's average and count (shown on the item page). **See reviews** on an item lists them.
-- **Trust score:** the reviewed person's score changes by (stars - 3): 5 stars +2, 4 +1, 3 0, 2 -1, 1 -2. It can go negative.
-- **Points:** the reviewed person gets 2 per star; the reviewer gets 5. Levels: Bronze, Silver (150), Gold (500), Platinum (1000).
-- **Profile:** shows score, points, level, the Trusted badge, and **Reviews about me**.
-- **Leaderboard** (Profile > Leaderboard): top 30 by points or by trust score; banned accounts are hidden. Tap a row to read reviews about that person.
-- Review lists are sorted on the phone, so no extra Firestore index is needed.
+### 5.2 Reviews, score and points
+* One review per side per booking (`bookingId_reviewerUid`), 1 to 5 stars, optional comment.
+* The reviewed person's trust score changes by **stars − 3**; they get **2 × stars** points; the reviewer gets **5** points.
+* Tiers: Bronze, Silver (150 points), Gold (500), Platinum (1000).
+* A renter's review also updates the item's rating average and count.
 
-### Known gaps in step 5
-- Totals are written by the app (no Cloud Functions on the free plan). The rules only accept a score, points or rating change in the same transaction as a brand-new, valid review, with the exact expected amounts, but the owner of an item can still edit its own rating fields (an older rule), and the rules are untested.
-- Points for finishing rentals on time, and score penalties for late returns or damage, arrive with claims and debts in step 6.
+### 5.3 Claims, debts, freeze and ban
+* The owner can claim up to the item's replacement value within 24 hours of the return, with a reason. One claim per booking; photos are the evidence.
+* The renter can accept, dispute (an admin decides) or offer a smaller amount.
+* Accepting creates a **debt** due in **10 days**: the renter is **frozen** (cannot list, request, accept or pay, but can still return items), loses **20** trust score and gets the past-damage flag.
+* Repaying takes the amount from the wallet, unfreezes when it was the last open debt and gives **10** score back. The owner then taps **Collect**.
+* Reminders at 7, 3 and 1 days left. After the deadline the account is **banned**: the app signs the debtor out the next time it opens, and the owner can tap **Ban account**.
 
-### Step 4b (handover, return, payout): what to do
-No new keys. **Republish `firestore.rules`**, run a Gradle sync (new dependencies: CameraX, ML Kit barcode scanning, ZXing, WorkManager, and `guava` for CameraX), rebuild, and test on two devices (the camera needs a real phone or an emulator with a webcam).
+### 5.4 Search
+A circle around the user is covered by a few geohash ranges. Each range is one Firestore query on the indexed `geohash` field, results are filtered by exact distance, and Friends-only items are filtered by the viewer's friend list. Reads are one-shot to protect the free quota.
 
-### What works in step 4b
-- **Handover:** after payment the owner takes condition photos, then shows a QR code. The renter scans it, takes their own photos, and confirms. The booking becomes `handed_over`.
-- **Return:** the owner shows a return QR code, the renter scans it, takes photos, and taps Return item. The booking becomes `returned`.
-- **Confirm and payout:** the owner takes after-photos and confirms; the held money (plus any late fee) goes to the owner's wallet and the booking is `completed`. If the owner does nothing for 24 hours after the return, the renter can close the rental, and the owner can then collect the payout.
-- **Late fees:** after a 15-minute grace period, half the rate per started unit, capped at the booking total, taken from the renter's wallet on return.
-- **Overdue:** a handed-over booking past its end time is marked `overdue` the next time either side opens it.
-- **QR security:** the secret codes live in `bookings/{id}/secret/codes`, readable only by the owner. The rules compare the scanned code with it, so a renter cannot fake a handover.
-- **Reminders:** local notifications at 24 h, 3 h, 30 min and at the due time (WorkManager). Timing is approximate because Android may delay background work. Tapping one opens the booking. Android 13+ asks for notification permission.
+### 5.5 Pictures
+Photos are scaled to 1280 px JPEG and uploaded to Cloudinary with the unsigned preset. The returned `secure_url` is saved in Firestore.
 
-### Known gaps in step 4b
-- The rules were written without the Firebase emulator. If the console refuses them or a write is denied unexpectedly, send me the error text.
-- Wallet, score and points are written by the app, so a determined user could tamper with them (a free-plan limit).
-- Nothing here has been compiled yet; expect a few build errors on first sync.
+---
 
-### Step 4a (bookings and wallet): what to do
-No new keys or services. **Republish `firestore.rules`** (new `bookings` and `wallets` rules), rebuild, and test with two accounts: A lists an item, B requests it, A accepts, B pays.
+## 6. Project structure
 
-### What works in step 4a
-- **Request booking** from the item page, or **Book at agreed price** from a chat once an offer is accepted (the rate is pre-filled and the rules check it against the accepted offer). Pick start and end with date and time pickers. Any part of a unit counts as a full unit; the total is rate x units. Bookings are 30 days at most.
-- **Rentals tab:** switch between "I am renting" and "I am lending". Tap a booking for details.
-- **Owner:** Accept or Decline a request. Accepting is refused if it overlaps another accepted booking for the same item. The owner can cancel an accepted booking.
-- **Renter:** Cancel a request or an accepted booking, or **Pay from wallet** once accepted. Payment is one batch: the booking becomes `paid`, the wallet drops by the total, the amount is held on the booking as `escrow`, and a wallet history line is added.
-- **Wallet** (Profile > Wallet): new accounts get ৳2000 demo credit, with +৳500 / +৳1000 / +৳2000 top-up buttons and a history list. No real money anywhere.
-- **Trust tier:** items worth more than ৳15,000 can only be rented by Trusted accounts (the badge is granted by an admin in step 7; clients cannot set it). Frozen or banned accounts cannot request or accept.
-- The booking states `handed_over`, `returned`, `completed`, `overdue` and `disputed` already exist in the model; they are used from step 4b onwards.
+```
+RentNear/
+├── app/src/main/
+│   ├── AndroidManifest.xml
+│   ├── java/com/rentnear/app/
+│   │   ├── MainActivity.java        host of the fragments, system banner, presence, overdue ban
+│   │   ├── RentNearApp.java         app start: Prefs, notification channels
+│   │   ├── data/                    Retrofit (Geoapify), Cloudinary uploader, Room cache
+│   │   ├── model/                   Item, Booking, Chat, ChatMessage, Review, Claim, Debt, ...
+│   │   ├── repository/              Firestore and Realtime Database access (one class per area)
+│   │   ├── viewmodel/               ViewModels exposing LiveData to the screens
+│   │   ├── ui/                      auth, home, item, chat, booking, wallet, claim, friends,
+│   │   │                            profile, settings, common
+│   │   ├── receivers/               SystemEventReceiver, BootReceiver
+│   │   ├── services/                RentalTimerService (foreground countdown)
+│   │   ├── workers/                 booking and debt reminder workers, resync after reboot
+│   │   └── util/                    Format, Prefs, QrCode, Tiers, ContactsPicker, CsvExport, ...
+│   └── res/                         layouts, navigation graph, strings, menus, file_paths.xml
+├── firestore.rules                  Firestore security rules (about 700 lines)
+├── database.rules.json              Realtime Database rules
+├── local.properties.example         template for the API keys
+├── DEMO.md                          demonstration script
+└── README.md
+```
 
-### Known gaps in step 4a
-- Wallet balance is written by the app. The rules cap a top-up at ৳5000 per write and require a payment to lower the balance by exactly the booking total, but a determined user could still top up repeatedly. Production would use Cloud Functions (needs the paid Blaze plan).
-- The overlap check on Accept runs in the app, because the rules cannot query other bookings. Two requests for the same dates can both exist until one is accepted.
-- A booking cannot be cancelled after it is paid yet (no refunds). Problems after payment go through chat now and the claims system in step 6.
-- The money held on a paid booking is released to the owner in step 4b, when the owner confirms the return.
-- The new rules were written without running the Firebase emulator. If the console refuses to publish them or a write is denied unexpectedly, send me the error text.
+Data flows one way: **Fragment → ViewModel → Repository → Firebase**, and results come back as **LiveData** observed by the fragment.
 
-### Step 3 (chat): what to do
-No new keys or services. Just **republish `firestore.rules`** (it now covers chats, messages, blocks and reports), then rebuild. Test with two accounts on two devices or emulators: user A lists an item, user B opens it and taps **Message owner**.
+---
 
-### What works in step 3
-- **Message owner** on the item page opens (or creates) a 1-to-1 chat for that item. The chat id is `itemId_renterId`, so each renter has one conversation per item. Owners cannot message themselves.
-- **Messages:** text, photos (uploaded through Cloudinary), and price-offer cards. Updates arrive live while the conversation is open.
-- **Offers:** either side can make an offer in the item's price unit. The receiver can **Accept**, **Counter** or **Decline**. A counter marks the old offer as countered and sends a new offer back. Accepting records the agreed price on the chat and shows an "Agreed price" banner; step 4 will pre-fill the booking from it.
-- **Chats tab:** list of conversations with the item thumbnail, last message, time and an unread count. The bottom-nav Chats icon shows the total unread badge while the app is open.
-- **Block and report** from the ⋮ menu: blocking hides the composer for both people (and Security Rules reject messages from the blocked person); unblock from the same menu. Reporting a conversation files a `reports` document for the admin app (step 7).
-- Live listeners only run on the open chat and while the app is in the foreground, to protect the free Firestore quota. There are no push notifications, so messages do not arrive while the app is closed.
+## 7. Data model (Firestore)
 
-### Known gaps in step 3
-- Messages are not cached in Room yet (step 8), so an open chat re-reads its last 50 messages each time.
-- The agreed price on a chat is written by the app. Step 4 will check it against the accepted offer message before creating a booking.
-- Blocking is checked by Security Rules when a message is sent; the "blocked" banner itself is checked when the chat is opened.
-- Reporting an item or a user profile (not just a conversation) comes later.
+| Path | Contents |
+|---|---|
+| `users/{uid}` | name, email, photoUrl, trustScore, points, trusted, frozen, banned, pastDamage, warning |
+| `items/{id}` | owner, title, description, category, price, unit, declaredValue, photos, address, lat, lng, geohash, audience, active, ratingAvg, ratingCount |
+| `bookings/{id}` | item, renter, owner, start, end, rate, unit, total, status, escrow, photos (before/after, both sides), late fee, timestamps |
+| `bookings/{id}/secret/codes` | handover and return QR secrets (owner read only) |
+| `chats/{itemId_renterId}` | participants, item summary, last message, unread counters, accepted price |
+| `chats/{id}/messages/{msg}` | text, image, or offer (amount, unit, state) |
+| `wallets/{uid}` | balance; `wallets/{uid}/tx/{id}` history lines |
+| `reviews/{bookingId_reviewerUid}` | rating, comment, reviewer, reviewee |
+| `claims/{id}`, `debts/{id}` | damage claims and debts with deadlines and states |
+| `friendRequests/{from_to}` | from, to, names, status |
+| `friends/{uid}/list/{friendUid}` | name, since |
+| `trustRequests/{uid}`, `reports/{id}` | moderation queues |
+| `admins/{uid}` | accounts allowed to use the admin client (written by hand in the console) |
 
-### Extra setup for step 2 (all free, no card)
-1. **Geoapify** (address search + walking directions): create a free project at https://myprojects.geoapify.com and copy the API key.
-2. **Cloudinary** (listing photos): create a free account, note your *cloud name*, then Settings → Upload → Upload presets → add a preset with **Signing mode: Unsigned**.
-3. Copy the three lines from `local.properties.example` into `local.properties` and fill them in. Rebuild after editing.
-4. Republish `firestore.rules` (it now includes the `items` rules).
-5. Map tiles come from OpenFreeMap and need no key.
+---
 
-Without the Geoapify key the map and listings still work, but address search and walking routes are off (use "Use my current location" when listing). Without Cloudinary values, publishing a listing fails with a clear message.
+## 8. Realtime Database (presence)
 
-### What works in step 2
-- **Home** has Map and Browse tabs sharing one nearby search (10 km radius, geohash range queries, one-shot reads to protect the free Firestore quota). Swipe down on Browse to refresh.
-- **Map:** MapLibre with OpenFreeMap tiles, your position as a blue dot, items as teal pins; tap a pin for a preview card, then View.
-- **Browse:** RecyclerView feed, sorted by nearest, cheapest (hourly and daily prices compared per hour) or top rated, with a ListView category filter.
-- **Item detail:** photo strip, price, replacement value, owner, pickup address, and a Geoapify walking route and time on a small map. Message and booking buttons are disabled until steps 3 and 4.
-- **List an item:** title, description, category, price per hour or day, replacement value, audience (Everyone or Friends only), pickup via address search or current location, up to 4 photos. Photos are downscaled to 1280 px JPEG before upload to Cloudinary.
-- Without location permission the app falls back to a default centre (Khulna) and says so.
+Realtime Database is used for **presence** because its `onDisconnect()` hook marks a user offline even when the app is killed.
 
-### Known gaps in step 2
-- Friends-only items are visible only to their owner until the friends feature exists.
-- Each geohash range query returns at most 30 listings, so a very dense area could hide some. Proper pagination (20 at a time) and Room caching of listings come in a later polish pass.
-- Rating and review fields exist on items but stay at 0 until step 5.
-- Prices use the ৳ symbol; change `Format.CURRENCY` to switch.
-- Dependency versions (MapLibre 11.5.2, GeoFire 3.2.0 and others) were chosen from memory and not build-tested here. If Gradle cannot resolve one, bump it to the latest release.
+```
+presence/{uid} = { online: true|false, lastSeen: <server timestamp> }
+```
 
-### What works in step 1
-- Sign up with email, name and password; a verification email is sent automatically.
-- Log in; unverified email accounts are sent to the verify screen (resend / "I verified my email").
-- Continue with Google (verified automatically).
-- A `users/{uid}` document is created with trustScore 0, points 0, frozen/banned/trusted/pastDamage false.
-- Banned accounts are signed out with a message.
-- Bottom nav: Home, Chats, Rentals, Profile. Profile shows score and points and has sign out.
+* `PresenceRepository.goOnline()` runs in `MainActivity.onStart`, listens to `.info/connected`, sets the `onDisconnect` write and marks the user online. `goOffline()` runs in `onStop`.
+* `ChatFragment` calls `watch(otherUid)` and shows **Online** or **Last seen 5 minutes ago** under the chat title.
+* Rules (`database.rules.json`): any signed-in user can read; only the owner can write their own node.
+* Everything is wrapped in try/catch. If the database was not created, the rest of the app works and the header simply shows nothing.
 
+---
 
-## Step 9 – demo components
-Broadcast receivers (`SystemEventReceiver`, `BootReceiver`), foreground service (`RentalTimerService`), Contacts and FileProvider content providers, maps/share intents, Realtime Database presence (`database.rules.json`). See `DEMO.md` for the rubric mapping. Not compiled in the sandbox.
+## 9. Android components
+
+| Component | Where |
+|---|---|
+| Activities | `SplashActivity`, `LoginActivity`, `RegisterActivity`, `MainActivity` |
+| Explicit intents | Login → `MainActivity`; notification tap → booking (`bookingId`, `openDebts` extras) |
+| Implicit intents | Open pickup in Maps (`geo:`), share a listing (`ACTION_SEND`), share the wallet CSV |
+| Broadcast receivers | `SystemEventReceiver` (dynamic: airplane mode, battery low/okay, battery saver); `BootReceiver` (manifest: re-schedules reminders after boot or app update) |
+| Service | `RentalTimerService`, a foreground service with a live countdown and a Stop action |
+| Content providers | Contacts (`ContactsContract`, read with a runtime permission) and `FileProvider` for the CSV export |
+| Background work | WorkManager: booking reminders, debt reminders, resync after reboot |
+| Permissions (runtime) | Camera, notifications, contacts |
+| Lifecycle | State is held in ViewModels, so screens survive rotation |
+
+---
+
+## 10. Security model and honest limits
+
+There are no Cloud Functions (they need the paid Blaze plan) and no push notifications. So the **app writes** wallet balances, trust scores, points and debt records, and the **Firestore rules check each write**: allowed state transitions, exact amounts (payments, late fees, payouts, score and point changes), who may write what, one review per booking, and the debt deadline. Each cross-document change must come with a valid new document (for example a score change only together with a new review).
+
+Limits you should know about:
+* **Demo wallet:** top-ups are capped per write (৳5000) but not in total. It is demo money, so this is by design.
+* **Friends-only listings** are hidden in the app, but the rules let any signed-in user read listings, because a rule cannot be proven for a range query. Someone reading Firestore directly could see them, including the pickup address.
+* **Scores and points** change only with a valid review or debt and exact amounts, but the writer is still the client.
+* **Bans and freezes** take effect when the app next reads the profile. A debtor who never opens the app is banned when the owner taps Ban or an admin runs the sweep.
+* **The booking overlap check** runs in the app, so two requests for the same dates can both exist until one is accepted.
+* **Reminders** use WorkManager, so timing is approximate.
+* **Presence** can be written by its owner only, but is readable by any signed-in user.
+* Production would move wallet, score, debt and ban logic into Cloud Functions.
+
+---
+
+## 11. Design decisions
+
+* Debt deadline **10 days**, reminders at 7, 3 and 1 days. Score penalty 20, 10 back on repayment.
+* Late fee: **half the rate** per started unit after **15 minutes** of grace, capped at the total.
+* Any part of a unit counts as a full unit; a booking is 30 days at most.
+* Identity verification is replaced by an admin-granted **Trusted** badge (needed above ৳15,000).
+* Currency symbol ৳ (`Format.CURRENCY`).
+* Live Firestore listeners run only on the open chat or booking, and while the app is in the foreground, to protect the free quota.
+
+---
+
+## 12. Troubleshooting
+
+| Problem | Cause and fix |
+|---|---|
+| Gradle sync fails with a Java or JVM message | Set Gradle JDK to 17–21. |
+| `Found item String/xyz more than one time` | A string name is defined twice in `strings.xml`; rename or delete one. |
+| `PERMISSION_DENIED` after changing the rules | Make sure you **published** the latest `firestore.rules`. If one action still fails, open the Rules playground, simulate the write and send the failing line. |
+| Friend requests fail | Fixed in the current rules: a read of a request that does not exist yet must be allowed. Republish `firestore.rules`. |
+| No Online / Last seen in chat | Create the Realtime Database, publish `database.rules.json`, and re-download `google-services.json`. |
+| No pins on the map | Check that Browse shows items, that they are inside your radius (Settings), and Logcat for a Firestore error or index link. |
+| Address search does nothing | `GEOAPIFY_KEY` is empty in `local.properties`; rebuild after editing. |
+| Photo upload fails | Check `CLOUDINARY_CLOUD` and that the preset is **Unsigned**. |
+| No notifications | Allow notifications (Android 13+) and disable battery restrictions for the app. |
+| Contacts picker is empty | No contact has an email address, or the contacts permission was denied. |
+
+---
+
+## 13. Admin client
+
+`RentNearAdmin/` is a separate JavaFX 21 desktop application (Maven, Firebase Admin SDK). It signs in with an email and password that has an `admins/{uid}` document and offers: dashboard, users (warn, freeze, ban), reports, trusted requests, claims (uphold or reject disputes), debts (including an overdue ban sweep) and listings (remove). Admin actions go through the Admin SDK, so they do not need client rules. Setup (service account key, creating the admin document) is in `RentNearAdmin/README.md`.
+
+---
+
+## 14. Not included
+* Real payments, push notifications, message caching, and an item edit screen (owners can create listings and deactivate them in the rules, but there is no edit UI).
+* A refund path after payment: problems after payment go through chat and the claims system.

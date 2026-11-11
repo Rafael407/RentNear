@@ -604,8 +604,10 @@ service cloud.firestore {
     }
 
     match /friendRequests/{reqId} {
+      // resource == null lets the app check whether a request exists before it creates one
+      // (reading a missing document would otherwise be denied, which blocked every new request).
       allow read: if signedIn()
-        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+        && (resource == null || resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
       allow create: if signedIn() && notBanned()
         && request.resource.data.keys().hasOnly(['from', 'to', 'fromName', 'toName', 'status', 'createdAt'])
         && request.resource.data.from == request.auth.uid
